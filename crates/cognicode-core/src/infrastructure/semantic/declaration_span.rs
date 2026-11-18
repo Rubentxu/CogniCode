@@ -47,9 +47,8 @@ impl DeclarationReader for TreeSitterDeclarations {
         if line + 1 < start_line || line + 1 > end_line {
             return None;
         }
-        let header_end = declaration
-            .child_by_field_name("body")
-            .map_or(declaration.end_byte(), |body| body.start_byte());
+        let body = declaration.child_by_field_name("body");
+        let header_end = body.map_or(declaration.end_byte(), |body| body.start_byte());
         let header = source
             .get(declaration.start_byte()..header_end)?
             .trim_end()
@@ -58,6 +57,20 @@ impl DeclarationReader for TreeSitterDeclarations {
             start_line,
             end_line,
             header,
+            body_statements: body.map_or_else(Vec::new, statements_of),
         })
     }
+}
+
+/// The line ranges of the direct children of a body block.
+fn statements_of(body: tree_sitter::Node<'_>) -> Vec<(u32, u32)> {
+    let mut cursor = body.walk();
+    body.named_children(&mut cursor)
+        .map(|statement| {
+            (
+                statement.start_position().row as u32 + 1,
+                statement.end_position().row as u32 + 1,
+            )
+        })
+        .collect()
 }

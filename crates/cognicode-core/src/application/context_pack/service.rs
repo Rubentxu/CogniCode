@@ -27,10 +27,15 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::adaptive::{Adaptive, AdaptiveReport, PoolItem, gather};
+use super::detail::{Representation, represent};
+use super::expansion::ExpansionStatus;
 use super::measure::{MeasureKind, Measured, TokenMeasure};
+use super::policy::{Detail, Role, SelectionPolicy};
 use super::ports::{DeclarationReader, Relevance, SnapshotView, SourceReader};
-use super::render::{RenderView, render_with_notes};
-use super::selection::{Candidate, ContextSelection, SelectionRequest, select};
+use super::render::{RenderView, item_text, render_with_notes};
+use super::rerank::{Entry, Signals, rerank};
+use super::selection::{Candidate, ContextSelection, PlannedItem, SelectionRequest, select};
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::findings::digest::sha256_hex;
 use crate::domain::value_objects::published_line;
@@ -44,6 +49,10 @@ const HEADER_LIMIT: usize = 240;
 /// How many digest characters a continuation token binds to.
 const TOKEN_DIGEST_PREFIX: usize = 16;
 
+/// How many of the best candidates of an adaptive pool are costed and
+/// re-ordered by value per token; the rest keep their value order.
+const RERANKED_HEAD: usize = 60;
+
 /// What a pack is asked for.
 #[derive(Debug, Clone)]
 pub struct PackRequest {
@@ -53,6 +62,10 @@ pub struct PackRequest {
     pub max_tokens: u64,
     /// The token of the page to build; `None` builds the first.
     pub continuation: Option<String>,
+    /// The policy that chooses and orders the candidates by value per token
+    /// and decides how much of each symbol is shown; `None` keeps the plain
+    /// selection, every candidate a signature.
+    pub adaptive: Option<Adaptive>,
 }
 
 /// Why a pack could not be built at all.
@@ -117,6 +130,34 @@ pub struct PackItem {
     pub reason_detail: Option<String>,
     /// The score of the source that proposed it.
     pub score: f64,
+    /// What of the symbol the pack shows beyond its signature: present when
+    /// the selection is adaptive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub representation: Option<Representation>,
+    /// Why the item is where it is: present when the selection is adaptive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<ItemSelection>,
+}
+
+/// Why an item of an adaptive pack is where it is.
+///
+/// The signals are normalised over the pool of the request and the value is
+/// their weighted mean: a ranking value for this request, not a probability
+/// and not a confidence that the item is relevant.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ItemSelection {
+    /// The part it plays around the symbols the request is about.
+    pub role: Role,
+    /// The signals the value is made of.
+    pub signals: Signals,
+    /// The weighted mean of the signals under the policy.
+    pub value: f64,
+    /// How much it repeats what was chosen before it, from zero to one.
+    pub redundancy: f64,
+    /// The incremental value per token it was ordered by; absent for a symbol
+    /// the caller named, which goes first whatever it costs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub priority: Option<f64>,
 }
 
 /// A candidate the pack did not deliver.
@@ -180,6 +221,11 @@ pub struct ContextPack {
     pub unresolved: Vec<String>,
     /// The budget and the cost of the text.
     pub budget: BudgetReport,
+    /// How the selection was made: the policy, how the walk of the graph
+    /// went and what could not be used. Present when the selection is
+    /// adaptive.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive: Option<AdaptiveReport>,
     /// The text of the pack: what the budget was measured on.
     pub rendered: String,
 }
@@ -212,8 +258,113 @@ impl ContextPackService<'_> {
     /// Builds the pack of `request`.
     pub fn build(&self, request: &PackRequest) -> Result<ContextPack, ContextPackError> {
         let offset = self.offset_of(request.continuation.as_deref())?;
-        let selection = self.selection(&request.selection);
+        let selection = match &request.adaptive {
+            Some(adaptive) => self.adaptive_selection(&request.selection, adaptive),
+            None => self.selection(&request.selection),
+        };
         Ok(self.pack_of(&selection, offset, request.max_tokens))
+    }
+
+    /// The selection of `request` under the policy of `adaptive`.
+    ///
+    /// The pool is gathered from the signals the policy weighs, the best of
+    /// it is costed at the representation the policy plans for each role,
+    /// and the order is the greedy value per token without repeats. The
+    /// rest of the pool follows in value order.
+    pub fn adaptive_selection(
+        &self,
+        request: &SelectionRequest,
+        adaptive: &Adaptive,
+    ) -> ContextSelection {
+        let intent = request
+            .intent
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty());
+        let pool = gather(
+            &self.snapshot.graph,
+            self.relevance,
+            &request.anchors,
+            intent,
+            adaptive,
+        );
+        let mut effective = adaptive.policy.clone();
+        effective.weights = pool.weights;
+
+        let head = pool.items.len().min(RERANKED_HEAD);
+        let mut files = HashMap::new();
+        let entries: Vec<Entry> = pool.items[..head]
+            .iter()
+            .map(|item| {
+                let detail = effective.detail_for(item.role);
+                let cost = self
+                    .evidence(
+                        &item.candidate,
+                        &mut files,
+                        Some(Shown {
+                            planned: detail,
+                            level: detail,
+                            focus: &pool.focus,
+                            trace: None,
+                        }),
+                    )
+                    .map_or(0, |shown| self.measure.measure(&item_text(&shown)).tokens);
+                Entry {
+                    id: item.candidate.id.clone(),
+                    signals: item.signals,
+                    role: item.role,
+                    container: item.container.clone(),
+                    terms: item.terms.clone(),
+                    cost,
+                    pinned: item.pinned,
+                }
+            })
+            .collect();
+        let by_id: HashMap<&SymbolId, &PoolItem> = pool
+            .items
+            .iter()
+            .map(|item| (&item.candidate.id, item))
+            .collect();
+
+        let mut selection = ContextSelection {
+            ambiguities: pool.ambiguities.clone(),
+            unresolved: pool.unresolved.clone(),
+            ..ContextSelection::default()
+        };
+        selection.plan.focus = pool.focus.clone();
+        for placed in rerank(entries, &effective) {
+            let item = by_id[&placed.id];
+            let trace = ItemSelection {
+                role: item.role,
+                signals: item.signals,
+                value: placed.value,
+                redundancy: placed.redundancy,
+                priority: placed.priority.is_finite().then_some(placed.priority),
+            };
+            push_planned(&mut selection, item, &effective, trace);
+        }
+        for item in &pool.items[head..] {
+            let trace = ItemSelection {
+                role: item.role,
+                signals: item.signals,
+                value: item.candidate.score,
+                redundancy: 0.0,
+                priority: None,
+            };
+            push_planned(&mut selection, item, &effective, trace);
+        }
+        selection.adaptive = Some(AdaptiveReport {
+            policy: adaptive.policy.clone(),
+            weights_applied: pool.weights,
+            degraded_to: (pool.expansion.status == ExpansionStatus::Unknown)
+                .then(|| "lexical".to_string()),
+            expansion: pool.expansion,
+            gaps: pool.gaps,
+            pool: pool.items.len(),
+            reranked: head,
+            score_semantics: SCORE_SEMANTICS.to_string(),
+        });
+        selection
     }
 
     /// Builds the pack of a selection that is already made.
@@ -236,6 +387,13 @@ impl ContextPackService<'_> {
         max_tokens: u64,
         notes: &[String],
     ) -> ContextPack {
+        let all_notes: Vec<String> = selection
+            .adaptive
+            .iter()
+            .flat_map(AdaptiveReport::notes)
+            .chain(notes.iter().cloned())
+            .collect();
+        let notes = all_notes.as_slice();
         let total = selection.candidates.len();
         let mut files: HashMap<String, Result<String, String>> = HashMap::new();
         let mut delivered: Vec<(usize, PackItem)> = Vec::new();
@@ -244,17 +402,36 @@ impl ContextPackService<'_> {
 
         while consumed < total {
             let candidate = &selection.candidates[consumed];
-            match self.evidence(candidate, &mut files) {
-                Err(omission) => refused.push((consumed, omission)),
-                Ok(item) => {
-                    delivered.push((consumed, item));
-                    let text =
-                        self.text(&delivered, &refused, (offset, consumed + 1), total, notes);
-                    if self.measure.measure(&text).tokens > max_tokens {
+            let planned = selection.plan.items.get(&candidate.id);
+            let mut level = planned.map(|planned| planned.detail);
+            let outcome = loop {
+                let shown = planned.map(|planned| Shown {
+                    planned: planned.detail,
+                    level: level.unwrap_or(planned.detail),
+                    focus: &selection.plan.focus,
+                    trace: Some(&planned.trace),
+                });
+                match self.evidence(candidate, &mut files, shown) {
+                    Err(omission) => break Err(omission),
+                    Ok(item) => {
+                        delivered.push((consumed, item));
+                        let text =
+                            self.text(&delivered, &refused, (offset, consumed + 1), total, notes);
+                        if self.measure.measure(&text).tokens <= max_tokens {
+                            break Ok(true);
+                        }
                         delivered.pop();
-                        break;
+                        match level.and_then(Detail::lower) {
+                            Some(lower) => level = Some(lower),
+                            None => break Ok(false),
+                        }
                     }
                 }
+            };
+            match outcome {
+                Err(omission) => refused.push((consumed, omission)),
+                Ok(true) => {}
+                Ok(false) => break,
             }
             consumed += 1;
         }
@@ -336,6 +513,7 @@ impl ContextPackService<'_> {
                 scope: "rendered_text".to_string(),
                 verified,
             },
+            adaptive: selection.adaptive.clone(),
             rendered,
         }
     }
@@ -416,6 +594,7 @@ impl ContextPackService<'_> {
         &self,
         candidate: &Candidate,
         files: &mut HashMap<String, Result<String, String>>,
+        shown: Option<Shown<'_>>,
     ) -> Result<PackItem, Omission> {
         let refuse = |reason: &str| Omission {
             id: candidate.id.to_string(),
@@ -442,6 +621,13 @@ impl ContextPackService<'_> {
         let span =
             self.declarations
                 .declaration(&relative, source, line, symbol.location().column());
+        let representation = shown.as_ref().map(|shown| {
+            span.as_ref()
+                .map_or_else(Representation::signature, |span| {
+                    represent(source, span, shown.level, shown.focus)
+                })
+                .degraded_from(shown.planned)
+        });
         let (range, range_basis, header) = match span {
             Some(span) => (
                 ItemRange {
@@ -480,6 +666,8 @@ impl ContextPackService<'_> {
             reason: candidate.reason.code().to_string(),
             reason_detail: candidate.reason.detail(),
             score: candidate.score,
+            representation,
+            selection: shown.and_then(|shown| shown.trace.cloned()),
         })
     }
 
@@ -494,6 +682,43 @@ impl ContextPackService<'_> {
         }
         String::from_utf8(bytes).map_err(|_| "unreadable".to_string())
     }
+}
+
+/// What of a candidate an adaptive pack is asked to show.
+struct Shown<'a> {
+    /// The representation the policy planned for its role.
+    planned: Detail,
+    /// The representation to cut now: the planned one, or a smaller one when
+    /// the planned one did not fit.
+    level: Detail,
+    /// The words the request is about.
+    focus: &'a [String],
+    /// Why the item is where it is; absent while it is only being costed.
+    trace: Option<&'a ItemSelection>,
+}
+
+/// What a score means in an adaptive pack.
+const SCORE_SEMANTICS: &str = "a ranking value for this request: the weighted mean of signals \
+    normalised over its candidates; it is not a probability, not a confidence that the item is \
+    relevant, and not comparable across requests";
+
+/// Puts `item` in the selection with the way the policy shows it.
+fn push_planned(
+    selection: &mut ContextSelection,
+    item: &PoolItem,
+    policy: &SelectionPolicy,
+    trace: ItemSelection,
+) {
+    let mut candidate = item.candidate.clone();
+    candidate.score = trace.value;
+    selection.plan.items.insert(
+        candidate.id.clone(),
+        PlannedItem {
+            detail: policy.detail_for(item.role),
+            trace,
+        },
+    );
+    selection.candidates.push(candidate);
 }
 
 /// A header on one line, bounded.
