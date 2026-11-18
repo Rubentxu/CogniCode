@@ -28,10 +28,34 @@ use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::traits::code_verifier::CodeVerifier;
 use crate::infrastructure::complexity::TreeSitterComplexity;
 use crate::infrastructure::graph::GraphCache;
-use crate::infrastructure::lsp::CompositeProvider;
+use crate::infrastructure::lsp::providers::composite::{CompositeProvider, TierPolicy};
 use crate::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis;
+use crate::infrastructure::scip_loader::load_workspace_scip_index;
 use crate::infrastructure::semantic::{SemanticSearchService, SymbolCodeService};
 use crate::infrastructure::verification::RustVerifier;
+
+/// The code-intelligence provider of a workspace.
+///
+/// A workspace that declares a SCIP index bound to it gets the S3 tier, the
+/// one that answers from the index somebody produced. A workspace that
+/// declares none keeps the S2/S1/S0 pipeline, and a workspace that declares
+/// one the loader refuses keeps it too: a stale or foreign index is
+/// reported and ignored, never answered from.
+pub fn code_intelligence_provider(root: &Path) -> CompositeProvider {
+    match load_workspace_scip_index(root) {
+        Ok(Some(loaded)) => {
+            CompositeProvider::with_scip_index(root, loaded.index, TierPolicy::all())
+        }
+        Ok(None) => CompositeProvider::new(root),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "the declared SCIP index is not usable; continuing without the S3 tier"
+            );
+            CompositeProvider::new(root)
+        }
+    }
+}
 
 /// The capabilities a deployment gets when nothing overrides them.
 ///
@@ -42,7 +66,8 @@ pub fn default_capabilities(
     root: &Path,
     path_policy: Arc<dyn crate::application::ports::PathPolicy>,
 ) -> WorkspaceCapabilities {
-    let intelligence: Arc<dyn CodeIntelligenceProvider> = Arc::new(CompositeProvider::new(root));
+    let intelligence: Arc<dyn CodeIntelligenceProvider> =
+        Arc::new(code_intelligence_provider(root));
     let code_verifier: Arc<dyn CodeVerifier> = Arc::new(RustVerifier::new());
     let syntax: Arc<dyn crate::application::ports::SyntaxAnalysis> =
         Arc::new(TreeSitterSyntaxAnalysis::new());

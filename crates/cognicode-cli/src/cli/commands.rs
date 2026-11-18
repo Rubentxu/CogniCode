@@ -1644,7 +1644,7 @@ impl CommandExecutor {
         use crate::cli::result::{DefinitionLocation, HoverResult, NavigateResult, ReferenceEntry};
         use cognicode_core::domain::traits::code_intelligence::Reference as DomainReference;
         use cognicode_core::domain::value_objects::Location;
-        use cognicode_core::infrastructure::lsp::providers::CompositeProvider;
+        use cognicode_core::interface::composition::code_intelligence_provider;
         use std::path::Path;
 
         match command {
@@ -1655,7 +1655,7 @@ impl CommandExecutor {
                     })?;
 
                 let workspace = Path::new(path);
-                let provider = CompositeProvider::new(workspace);
+                let provider = code_intelligence_provider(workspace);
                 // The position the user typed is the line a person
                 // reads, and the code-intelligence paths speak that
                 // base: the line travels to the backend as it is.
@@ -1707,7 +1707,7 @@ impl CommandExecutor {
                     })?;
 
                 let workspace = Path::new(path);
-                let provider = CompositeProvider::new(workspace);
+                let provider = code_intelligence_provider(workspace);
                 // The position the user typed is the line a person
                 // reads, and the code-intelligence paths speak that
                 // base: the line travels to the backend as it is.
@@ -1751,7 +1751,7 @@ impl CommandExecutor {
                     })?;
 
                 let workspace = Path::new(path);
-                let provider = CompositeProvider::new(workspace);
+                let provider = code_intelligence_provider(workspace);
                 // The position the user typed is the line a person
                 // reads, and the code-intelligence paths speak that
                 // base: the line travels to the backend as it is.

@@ -5,7 +5,7 @@ use crate::domain::traits::code_intelligence::{
     CodeIntelligenceProvider, PrecisionTier, Reference, TieredCodeIntelligenceProvider,
     TieredOutcome,
 };
-use crate::infrastructure::lsp::providers::CompositeProvider;
+use crate::interface::composition::code_intelligence_provider;
 use crate::interface::mcp::schemas::{RenameEditEntry, RenamePreviewInput, RenamePreviewOutput};
 use crate::interface::symbol_identity::{
     default_provider_for_tool, precision_floor_for_tool, provider_for_tier,
@@ -16,7 +16,7 @@ fn get_provider(ctx: &HandlerContext) -> Arc<dyn CodeIntelligenceProvider> {
     if let Some(provider) = &ctx.code_intelligence_provider {
         provider.clone()
     } else {
-        Arc::new(CompositeProvider::new(&ctx.working_dir))
+        Arc::new(code_intelligence_provider(&ctx.working_dir))
     }
 }
 
@@ -269,7 +269,7 @@ pub async fn handle_find_references(
     // Without an injected provider the composite chain answers, and its tier
     // says who served; an injected provider has no tier to report.
     if ctx.code_intelligence_provider.is_none() {
-        let outcome = CompositeProvider::new(&ctx.working_dir)
+        let outcome = code_intelligence_provider(&ctx.working_dir)
             .find_references_tiered(&location, input.include_declaration)
             .await;
         return Ok(references_output(input.file_path, outcome));

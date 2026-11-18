@@ -9,6 +9,7 @@ use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::value_objects::Location;
 use crate::infrastructure::lsp::providers::composite::CompositeProvider;
 use crate::infrastructure::lsp::{LspClient, LspError, LspServerConfig};
+use crate::interface::composition::code_intelligence_provider;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -96,7 +97,7 @@ impl LspProxyService {
         self.setup_default_servers();
 
         if let Some(ref workspace_root) = self.workspace_root {
-            self.composite_provider = Some(Arc::new(CompositeProvider::new(workspace_root)));
+            self.composite_provider = Some(Arc::new(code_intelligence_provider(workspace_root)));
         }
     }
 

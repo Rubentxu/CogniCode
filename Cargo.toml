@@ -16,7 +16,13 @@ members = [
     # cognicode-rule-test-harness → docs/parked-crates/cognicode-rule-test-harness/
     "crates/cognicode-ladybug",
 ]
-exclude = ["crates/spike-ladybug"]
+exclude = [
+    "crates/spike-ladybug",
+    # The SCIP fixture is the project the index in `tests/data/scip` was
+    # produced from. It travels with the index so the fixture can be
+    # reproduced; it is not a package of this workspace.
+    "crates/cognicode-core/tests/data/scip/fixture",
+]
 
 # Development and test builds (`[profile.test]` inherits from `dev`).
 #
@@ -112,6 +118,8 @@ petgraph = "0.6"
 tokio = { version = "1.45", features = ["rt-multi-thread", "net", "sync", "time", "macros", "signal", "process", "io-util"] }
 async-trait = "0.1"
 futures-util = "0.3"
+protobuf = "=3.7.2"
+scip = "=0.10.0"
 tower = { version = "0.5", features = ["util"] }
 axum = "0.7"
 tokio-util = "0.7"

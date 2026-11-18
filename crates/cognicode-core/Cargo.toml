@@ -172,6 +172,8 @@ rayon.workspace = true
 
 # LSP
 lsp-types.workspace = true
+scip.workspace = true
+protobuf.workspace = true
 
 # OpenTelemetry
 opentelemetry.workspace = true

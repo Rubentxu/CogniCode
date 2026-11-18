@@ -9,6 +9,7 @@ use crate::infrastructure::graph::LightweightIndex;
 use crate::infrastructure::lsp::error::{LspProcessError, ProgressCallback};
 use crate::infrastructure::lsp::providers::fallback::TreesitterFallbackProvider;
 use crate::infrastructure::lsp::providers::lsp::LspIntelligenceProvider;
+use crate::infrastructure::lsp::providers::scip_provider::ScipIntelligenceProvider;
 use crate::infrastructure::parser::Language;
 use std::path::Path;
 use std::sync::Arc;
@@ -20,8 +21,12 @@ use tracing::{debug, warn};
 /// walk follows when selecting its support-matrix tiers — each op attempts
 /// only its eligible tiers and silently skips the rest — and the ordering
 /// of the `status()` counter rows.
-pub const TIER_ORDER: [PrecisionTier; 3] =
-    [PrecisionTier::S2, PrecisionTier::S1, PrecisionTier::S0];
+pub const TIER_ORDER: [PrecisionTier; 4] = [
+    PrecisionTier::S3,
+    PrecisionTier::S2,
+    PrecisionTier::S1,
+    PrecisionTier::S0,
+];
 
 /// Per-tier enablement policy for the composite pipeline.
 ///
@@ -35,6 +40,12 @@ pub struct TierPolicy {
     pub local_resolver: bool,
     /// Allow the S0 tree-sitter tier to be attempted.
     pub tree_sitter: bool,
+    /// Allow the S3 SCIP tier to be attempted.
+    ///
+    /// Off by default: the tier needs an index bound to the workspace, and
+    /// the policy does not carry one. [`Self::with_scip_enabled`] turns it
+    /// on for a provider that was built with an index.
+    pub scip: bool,
     /// Bounded readiness for an S2 attempt that has an enabled lower tier:
     /// the readiness gate waits at most this long before falling through
     /// (W3, default 2s). Irrelevant when the lower eligible tier is
@@ -53,18 +64,30 @@ impl TierPolicy {
             lsp: true,
             local_resolver: true,
             tree_sitter: true,
+            scip: false,
             fallback_readiness: Self::DEFAULT_FALLBACK_READINESS,
         }
     }
 
+    /// The same policy with the S3 SCIP tier enabled.
+    ///
+    /// The tier is only enabled for a provider that carries a bound index:
+    /// without one there is nothing to attempt.
+    pub const fn with_scip_enabled(mut self) -> Self {
+        self.scip = true;
+        self
+    }
+
     /// Whether `tier` participates in the pipeline under this policy.
-    /// Reserved tiers (S3/S4) have no producer and are never enabled.
+    ///
+    /// The S4 tier has no producer and is never enabled.
     pub const fn enabled(self, tier: PrecisionTier) -> bool {
         match tier {
             PrecisionTier::S2 => self.lsp,
             PrecisionTier::S1 => self.local_resolver,
             PrecisionTier::S0 => self.tree_sitter,
-            PrecisionTier::S3 | PrecisionTier::S4 => false,
+            PrecisionTier::S3 => self.scip,
+            PrecisionTier::S4 => false,
         }
     }
 
@@ -167,10 +190,11 @@ impl CompositeStatus {
 
 fn tier_index(tier: PrecisionTier) -> usize {
     match tier {
-        PrecisionTier::S0 => 0,
-        PrecisionTier::S1 => 1,
-        PrecisionTier::S2 => 2,
-        PrecisionTier::S3 | PrecisionTier::S4 => usize::MAX,
+        PrecisionTier::S3 => 0,
+        PrecisionTier::S2 => 1,
+        PrecisionTier::S1 => 2,
+        PrecisionTier::S0 => 3,
+        PrecisionTier::S4 => usize::MAX,
     }
 }
 
@@ -206,9 +230,11 @@ struct ChainOutcome<T> {
 pub struct CompositeProvider {
     lsp: LspIntelligenceProvider,
     fallback: TreesitterFallbackProvider,
+    /// The S3 tier: a SCIP index bound to this workspace, when there is one.
+    scip: Option<ScipIntelligenceProvider>,
     policy: TierPolicy,
     wait_timeout_secs: u64,
-    counters: [TierAtomics; 3],
+    counters: [TierAtomics; 4],
 }
 
 impl CompositeProvider {
@@ -290,14 +316,52 @@ impl CompositeProvider {
         policy: TierPolicy,
         timeout_secs: u64,
     ) -> Self {
+        Self::with_policy_timeout_and_scip(workspace_root, policy, timeout_secs, None)
+    }
+
+    fn with_policy_timeout_and_scip(
+        workspace_root: &Path,
+        policy: TierPolicy,
+        timeout_secs: u64,
+        scip: Option<ScipIntelligenceProvider>,
+    ) -> Self {
         let arc_index = Self::build_index(workspace_root);
         Self {
             lsp: LspIntelligenceProvider::new(workspace_root),
             fallback: TreesitterFallbackProvider::with_index(arc_index.clone()),
+            scip,
             policy,
             wait_timeout_secs: timeout_secs,
             counters: std::array::from_fn(|_| TierAtomics::default()),
         }
+    }
+
+    /// Builds a provider whose S3 tier answers from a SCIP index.
+    ///
+    /// The index must already be bound to the identity envelope the caller
+    /// expects (see [`crate::infrastructure::scip::ScipIndex::parse_bound`]):
+    /// an unbound index serves nothing, and the pipeline answers from the
+    /// lower tiers.
+    pub fn with_scip_index(
+        workspace_root: &Path,
+        index: crate::infrastructure::scip::ScipIndex,
+        policy: TierPolicy,
+    ) -> Self {
+        Self::with_policy_timeout_and_scip(
+            workspace_root,
+            policy.with_scip_enabled(),
+            30,
+            Some(ScipIntelligenceProvider::new(index)),
+        )
+    }
+
+    /// True when the S3 tier participates in the pipeline.
+    ///
+    /// The tier needs both the policy to allow it and an index to answer
+    /// from: without one, the tier is skipped silently, exactly like a
+    /// policy-disabled tier.
+    fn scip_enabled(&self) -> bool {
+        self.policy.enabled(PrecisionTier::S3) && self.scip.is_some()
     }
 
     pub fn with_progress_callback<F>(workspace_root: &Path, _callback: F) -> Self
@@ -486,6 +550,71 @@ impl CompositeProvider {
         F: std::future::Future<Output = Result<(), LspProcessError>>,
     {
         tokio::time::timeout(budget, readiness).await
+    }
+
+    // ── S3 (SCIP index) attempts ─────────────────────────────────────────
+
+    /// Attempts the S3 tier for references.
+    ///
+    /// The tier answers from a bound index only. A position the index does
+    /// not cover, an ambiguous position, or a symbol the producer did not
+    /// relate is a miss: the attempt degrades and the pipeline continues
+    /// with the lower tiers, because the absence of index evidence is not
+    /// evidence of absence.
+    async fn attempt_scip_find_references(
+        &self,
+        location: &Location,
+        include_declaration: bool,
+    ) -> Attempt<Vec<Reference>> {
+        let Some(provider) = self.scip.as_ref() else {
+            return Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S3,
+                ScipIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                "find_references: no SCIP index is bound to this workspace",
+            ));
+        };
+        match provider
+            .find_references_tiered(location, include_declaration)
+            .await
+        {
+            TieredOutcome::Served(tiered) => Attempt::Served(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Attempt::Degraded(diagnostics.into_iter().next().unwrap_or_else(|| {
+                    Self::diagnostic(
+                        PrecisionTier::S3,
+                        ScipIntelligenceProvider::PROVIDER_ID,
+                        ProviderOutcome::Degraded,
+                        "find_references: the SCIP tier answered nothing",
+                    )
+                }))
+            }
+        }
+    }
+
+    /// Attempts the S3 tier for a definition.
+    async fn attempt_scip_definition(&self, location: &Location) -> Attempt<Option<Location>> {
+        let Some(provider) = self.scip.as_ref() else {
+            return Attempt::Degraded(Self::diagnostic(
+                PrecisionTier::S3,
+                ScipIntelligenceProvider::PROVIDER_ID,
+                ProviderOutcome::Unavailable,
+                "get_definition: no SCIP index is bound to this workspace",
+            ));
+        };
+        match provider.get_definition_tiered(location).await {
+            TieredOutcome::Served(tiered) => Attempt::Served(tiered.value),
+            TieredOutcome::Unresolved(diagnostics) => {
+                Attempt::Degraded(diagnostics.into_iter().next().unwrap_or_else(|| {
+                    Self::diagnostic(
+                        PrecisionTier::S3,
+                        ScipIntelligenceProvider::PROVIDER_ID,
+                        ProviderOutcome::Degraded,
+                        "get_definition: the SCIP tier answered nothing",
+                    )
+                }))
+            }
+        }
     }
 
     // ── S2 (LSP) attempts ───────────────────────────────────────────────
@@ -901,6 +1030,23 @@ impl CompositeProvider {
         let mut diagnostics = Vec::new();
         let mut deepest = DeepestAnswer::Miss;
 
+        if self.scip_enabled() {
+            match self.attempt_scip_definition(location).await {
+                Attempt::Served(value) => {
+                    return ChainOutcome {
+                        outcome: self.serve(value, PrecisionTier::S3, diagnostics),
+                        deepest,
+                    };
+                }
+                // The index states a definition or it does not: a miss here
+                // is not a negative answer, so the chain continues.
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
+                    self.record_failure("get_definition", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
+
         if self.policy.enabled(PrecisionTier::S2) {
             match self.attempt_lsp_definition(location).await {
                 // `Ok(None)` is served at S2 and never falls through.
@@ -1195,6 +1341,21 @@ impl TieredCodeIntelligenceProvider for CompositeProvider {
         include_declaration: bool,
     ) -> TieredOutcome<Vec<Reference>> {
         let mut diagnostics = Vec::new();
+
+        if self.scip_enabled() {
+            match self
+                .attempt_scip_find_references(location, include_declaration)
+                .await
+            {
+                Attempt::Served(value) => {
+                    return self.serve(value, PrecisionTier::S3, diagnostics);
+                }
+                Attempt::Degraded(d) | Attempt::Failed(d, _) => {
+                    self.record_failure("find_references", &d);
+                    diagnostics.push(d);
+                }
+            }
+        }
 
         if self.policy.enabled(PrecisionTier::S2) {
             match self

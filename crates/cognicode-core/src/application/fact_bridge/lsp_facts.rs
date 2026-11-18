@@ -67,7 +67,8 @@ fn tier_provider_id(tier: PrecisionTier) -> &'static str {
         PrecisionTier::S2 => "lsp",
         PrecisionTier::S1 => "local-resolver",
         PrecisionTier::S0 => "tree-sitter",
-        PrecisionTier::S3 | PrecisionTier::S4 => "reserved",
+        PrecisionTier::S3 => "scip",
+        PrecisionTier::S4 => "reserved",
     }
 }
 
@@ -904,6 +905,7 @@ mod tests {
     fn tier_provider_ids_match_the_provider_identity_constants() {
         use crate::infrastructure::lsp::providers::fallback::TreesitterFallbackProvider;
         use crate::infrastructure::lsp::providers::lsp::LspIntelligenceProvider;
+        use crate::infrastructure::lsp::providers::scip_provider::ScipIntelligenceProvider;
 
         assert_eq!(
             tier_provider_id(PrecisionTier::S2),
@@ -916,6 +918,10 @@ mod tests {
         assert_eq!(
             tier_provider_id(PrecisionTier::S0),
             TreesitterFallbackProvider::PROVIDER_ID
+        );
+        assert_eq!(
+            tier_provider_id(PrecisionTier::S3),
+            ScipIntelligenceProvider::PROVIDER_ID
         );
     }
 
