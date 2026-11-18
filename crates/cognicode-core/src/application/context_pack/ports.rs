@@ -58,6 +58,11 @@ pub struct DeclarationSpan {
     pub end_line: u32,
     /// The declaration up to where its body starts.
     pub header: String,
+    /// The line ranges of the statements that are direct children of the
+    /// body, counted from one, both ends included, in source order. Empty
+    /// when the declaration has no body block or the language does not
+    /// expose one.
+    pub body_statements: Vec<(u32, u32)>,
 }
 
 /// Reads the declaration that encloses a position.

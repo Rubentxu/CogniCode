@@ -25,6 +25,10 @@ mod a_symbol_count_is_published_only_when_it_was_measured;
 mod a_turbofish_is_not_the_name_of_the_callee;
 mod a_usage_search_is_bounded_and_says_what_it_covered;
 mod a_value_receiver_names_a_method_of_its_type;
+mod adaptive_context_pack;
+mod adaptive_pack_evaluation;
+mod adaptive_pack_storage;
+mod adaptive_pack_world;
 #[cfg(feature = "persistence")]
 mod an_edited_file_is_read_once;
 mod an_external_qualifier_does_not_join_a_project_symbol;
@@ -169,6 +173,7 @@ mod safety_gate_tests;
 #[cfg(feature = "evidence-kernel")]
 mod scm_changeset_planning;
 
+mod an_sbom_is_read_against_the_fixture_workspace;
 #[cfg(feature = "evidence-kernel")]
 mod incremental_complete_snapshot;
 mod scm_revision_snapshots;

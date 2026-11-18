@@ -48,6 +48,7 @@ impl DeclarationReader for ThreeLines {
             start_line: line + 1,
             end_line: line + 3,
             header,
+            body_statements: Vec::new(),
         })
     }
 }
@@ -175,6 +176,7 @@ fn request(anchors: &[&str], max_tokens: u64) -> PackRequest {
         },
         max_tokens,
         continuation: None,
+        adaptive: None,
     }
 }
 
@@ -472,6 +474,7 @@ fn the_intent_ranking_contributes_name_relevance_candidates() {
         },
         max_tokens: 10_000,
         continuation: None,
+        adaptive: None,
     };
     let p = pack(
         &f,

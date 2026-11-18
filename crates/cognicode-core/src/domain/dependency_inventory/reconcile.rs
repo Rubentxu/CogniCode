@@ -588,7 +588,7 @@ fn layers(
             DependencyLayer::Distributed,
             (
                 CoverageStatus::NotCollected,
-                "what a build ships needs the built artifact or its SBOM; a repository revision holds neither",
+                "what a build ships needs the built artifact or an SBOM of it; a repository revision holds neither and no SBOM was supplied",
             ),
         ),
     ];

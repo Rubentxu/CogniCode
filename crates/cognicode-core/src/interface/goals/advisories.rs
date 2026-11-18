@@ -16,7 +16,6 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::io::Read;
 use std::path::Path;
 
 use crate::application::advisory_correlation::{
@@ -24,10 +23,10 @@ use crate::application::advisory_correlation::{
 };
 use crate::application::dependency_inventory::InventoryLimits;
 use crate::domain::advisory_matching::FeedLimits;
-use crate::domain::scm::{ContentDigest, SourceRef};
+use crate::domain::scm::SourceRef;
 use crate::infrastructure::git::GitScmAdapter;
 use crate::interface::goals::GoalEnvironment;
-use crate::interface::path_authorisation::authorise_workspace_file;
+use crate::interface::goals::common::{parse_sha256_digest, read_workspace_file};
 
 fn default_revision() -> String {
     "HEAD".to_string()
@@ -87,40 +86,15 @@ const LIMITS: [&str; 6] = [
     "What a match means for a release (risk, policy, verdict) is decided elsewhere; this goal only observes.",
 ];
 
-fn parse_digest(raw: &str) -> Result<ContentDigest, String> {
-    let hex = raw.trim().strip_prefix("sha256:").unwrap_or(raw.trim());
-    ContentDigest::from_hex(hex).map_err(|_| {
-        format!("`expected_digest` must be 64 lowercase hex digits or `sha256:<hex>`, not `{raw}`")
-    })
-}
-
 /// Reads the feed file under the byte limit. Any failure becomes the
 /// reason the feed is unusable, so the answer says `not_evaluated`.
 fn read_feed(workspace: &Path, raw: &str, limits: &FeedLimits) -> FeedSupply {
-    let path = match authorise_workspace_file(workspace, raw) {
-        Ok(path) => path,
-        Err(reason) => return FeedSupply::Unreadable { reason },
-    };
-    let file = match std::fs::File::open(&path) {
-        Ok(file) => file,
-        Err(error) => {
-            return FeedSupply::Unreadable {
-                reason: format!("cannot open the feed `{raw}`: {}", error.kind()),
-            };
-        }
-    };
-    let mut bytes = Vec::new();
-    let bound = u64::try_from(limits.max_bytes)
-        .unwrap_or(u64::MAX)
-        .saturating_add(1);
-    if let Err(error) = file.take(bound).read_to_end(&mut bytes) {
-        return FeedSupply::Unreadable {
-            reason: format!("cannot read the feed `{raw}`: {}", error.kind()),
-        };
-    }
-    FeedSupply::Bytes {
-        origin: raw.to_string(),
-        bytes,
+    match read_workspace_file(workspace, raw, limits.max_bytes, "feed") {
+        Ok(bytes) => FeedSupply::Bytes {
+            origin: raw.to_string(),
+            bytes,
+        },
+        Err(reason) => FeedSupply::Unreadable { reason },
     }
 }
 
@@ -157,7 +131,7 @@ pub fn advisories_at(
     let expected_digest = input
         .expected_digest
         .as_deref()
-        .map(parse_digest)
+        .map(|raw| parse_sha256_digest("expected_digest", raw))
         .transpose()?;
     let root = workspace
         .canonicalize()

@@ -16,6 +16,7 @@
 //! construye no puede publicarlas. Publicarlas vacías sería publicar una
 //! cuenta que nadie hizo.
 
+use std::io::Read;
 use std::path::Path;
 
 use schemars::JsonSchema;
@@ -23,8 +24,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::graph_snapshot::{TreeFile, build_manifest, source_digest};
 use crate::application::services::analyze::{Coverage, CoverageFacts};
+use crate::domain::scm::ContentDigest;
 use crate::infrastructure::graph::source_files::{SourceInventory, inventory};
 use crate::interface::coverage::CoverageInfo;
+use crate::interface::path_authorisation::authorise_workspace_file;
 use crate::interface::project_graph::ProjectGraph;
 
 /// What a goal that loaded the project's graph says it was built from.
@@ -161,6 +164,37 @@ pub fn coverage_of_inventory(inventory: &SourceInventory) -> CoverageInfo {
     };
 
     CoverageInfo::of(&coverage)
+}
+
+/// Reads a SHA-256 digest an operator pinned: 64 hex digits or
+/// `sha256:<hex>`. `argument` names the input in the refusal.
+pub fn parse_sha256_digest(argument: &str, raw: &str) -> Result<ContentDigest, String> {
+    let hex = raw.trim().strip_prefix("sha256:").unwrap_or(raw.trim());
+    ContentDigest::from_hex(hex).map_err(|_| {
+        format!("`{argument}` must be 64 lowercase hex digits or `sha256:<hex>`, not `{raw}`")
+    })
+}
+
+/// Reads an operator-supplied file inside the workspace, never more than
+/// `max_bytes` plus one byte (so a reader can tell it was cut). `what` names
+/// the file in the reason when it cannot be read.
+pub fn read_workspace_file(
+    workspace: &Path,
+    raw: &str,
+    max_bytes: usize,
+    what: &str,
+) -> Result<Vec<u8>, String> {
+    let path = authorise_workspace_file(workspace, raw)?;
+    let file = std::fs::File::open(&path)
+        .map_err(|error| format!("cannot open the {what} `{raw}`: {}", error.kind()))?;
+    let mut bytes = Vec::new();
+    let bound = u64::try_from(max_bytes)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    file.take(bound)
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("cannot read the {what} `{raw}`: {}", error.kind()))?;
+    Ok(bytes)
 }
 
 #[cfg(test)]

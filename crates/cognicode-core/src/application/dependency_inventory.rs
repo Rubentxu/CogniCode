@@ -11,6 +11,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
+use crate::application::artifact_sbom::{DistributionAnswer, DistributionQuery, distribute};
+use crate::domain::dependency_inventory::sbom::SbomLimits;
 use crate::domain::dependency_inventory::{
     DependentsReport, Discrepancy, DiscrepancyKind, InventoryDelta, LockFreshness, SourceFile,
     WorkspaceInventory, dependents_of, diff_inventories, diff_packages, inventory_unit, plan_units,
@@ -24,6 +26,8 @@ pub struct InventoryLimits {
     pub max_file_bytes: u64,
     /// The most Cargo files read from one revision.
     pub max_files: usize,
+    /// The bounds of an SBOM document.
+    pub sbom: SbomLimits,
 }
 
 impl Default for InventoryLimits {
@@ -31,6 +35,7 @@ impl Default for InventoryLimits {
         Self {
             max_file_bytes: 8 * 1024 * 1024,
             max_files: 2_000,
+            sbom: SbomLimits::default(),
         }
     }
 }
@@ -48,6 +53,9 @@ pub struct InventoryQuery {
     /// Restricts the answer to the units that contain or lie under this
     /// repository-relative path.
     pub path: Option<String>,
+    /// An SBOM to compare the resolved inventory with: fills the
+    /// distributed layer as a claim of its producer.
+    pub distribution: Option<DistributionQuery>,
 }
 
 /// A resolved revision, as the answer anchors itself to it.
@@ -151,6 +159,9 @@ pub struct DependencyInventoryAnswer {
     pub dependents: Option<Vec<UnitDependents>>,
     /// The comparison with the base revision, when one was asked for.
     pub comparison: Option<InventoryComparison>,
+    /// The comparison with an SBOM, when one was supplied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub distributed: Option<DistributionAnswer>,
 }
 
 /// A revision's units with what was read to build them.
@@ -338,7 +349,11 @@ pub fn answer(
             units: compare_units(&base_units, &head_units),
         }
     });
-    let units: Vec<WorkspaceInventory> = head.units.into_iter().filter(|u| keep(u)).collect();
+    let mut units: Vec<WorkspaceInventory> = head.units.into_iter().filter(|u| keep(u)).collect();
+    let distributed = query
+        .distribution
+        .as_ref()
+        .map(|asked| distribute(&mut units, asked, &limits.sbom));
     let dependents = query.dependents.as_deref().map(|package| {
         units
             .iter()
@@ -355,6 +370,7 @@ pub fn answer(
         units,
         dependents,
         comparison,
+        distributed,
     })
 }
 
@@ -451,6 +467,7 @@ mod tests {
             base: None,
             dependents: None,
             path: None,
+            distribution: None,
         }
     }
 
@@ -482,6 +499,7 @@ mod tests {
         let limits = InventoryLimits {
             max_file_bytes: 100,
             max_files: 10,
+            ..InventoryLimits::default()
         };
 
         let answer = answer(&reader, &source(), &query("head"), &limits).expect("answer");

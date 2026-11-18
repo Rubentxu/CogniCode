@@ -5,6 +5,7 @@
 
 pub mod advisory_correlation;
 pub mod architecture;
+pub mod artifact_sbom;
 pub mod behaviors;
 pub mod cancellation;
 pub mod dependency_inventory;
