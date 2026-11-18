@@ -2071,8 +2071,8 @@
       "limitations": [
         "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select.",
         "The budget measures the rendered text, not the structured answer.",
-        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día.",
-        "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge."
+        "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known.",
+        "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
     {

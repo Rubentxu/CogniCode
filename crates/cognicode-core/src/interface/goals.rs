@@ -789,7 +789,7 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
                 .to_string(),
             "The budget measures the rendered text, not the structured answer."
                 .to_string(),
-            "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge."
+            "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known."
                 .to_string(),
         ]
     } else {
