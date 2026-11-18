@@ -98,6 +98,7 @@ mod git_scm_adapter;
 mod goals_and_hateoas_do_not_import_mcp;
 mod goals_and_mcp_do_not_import_cli;
 mod graph_builds_are_single_flight;
+mod graph_explain_publishes_relations;
 mod graph_index_answers_the_same_way_on_every_disk;
 mod graph_query_filtered_runs_the_query;
 mod graph_query_says_what_it_traversed;
