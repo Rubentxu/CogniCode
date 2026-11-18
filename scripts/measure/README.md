@@ -38,3 +38,25 @@ conserva con su `rel`, así que la traza la escribe el servidor.
 (`--follow all|none|rel,rel`) para probar el contador; mide el contrato de
 cable, no el comportamiento de un agente (con «seguir todo» la tasa es 1 por
 construcción).
+
+## Context pack frente a `smart_search` y `codebase_map`
+
+`context_pack_ab.py` arranca sesiones MCP reales (`--profile full`) sobre un
+árbol y, para cada caso con verdad terreno escrita a mano, mide `pack`,
+`smart_search` (con la frase tal cual y con las palabras unidas por `_`) y
+`codebase_map`: acierto del símbolo esperado entre los K primeros, precisión por
+fichero, latencia (primera llamada de la sesión aparte), bytes de lo que lee el
+agente y qué campos de evidencia trae la respuesta.
+
+```sh
+python3 -I scripts/measure/context_pack_ab.py --server <cognicode-mcp> \
+  --workspace crates/cognicode-core/src/application --sessions 3 --rounds 5 \
+  --out /tmp/context-pack-ab.json
+```
+
+Reglas del instrumento: el host es compartido, así que el informe registra la
+carga y los núcleos y da p50 con su ruido y el número de muestras; una llamada
+fallida se cuenta aparte y no entra en ningún número; los bytes no se convierten
+en tokens; un campo que la respuesta no trae es `false`, no una estimación. La
+comparación vale dentro de un mismo binario (uno debug es mucho más lento que
+uno release).
