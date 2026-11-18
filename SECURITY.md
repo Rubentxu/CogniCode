@@ -89,7 +89,8 @@ reportable correctness and safety issue.
 
 | Version | Supported |
 |---|---|
-| 0.106.0 (current cut) | yes |
+| 0.107.0 (current cut) | yes |
+| 0.106.0 (previous cut, never published) | no |
 | 0.105.0 (previous published release, `v0.105.0`) | yes |
 | 0.104.0 (previous cut, never published) | no |
 | 0.103.1 (previous published release, `v0.103.1`) | yes |
