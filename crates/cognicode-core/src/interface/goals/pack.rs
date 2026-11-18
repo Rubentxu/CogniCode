@@ -51,6 +51,8 @@ use crate::interface::project_graph::{ProjectGraph, service_with_graph};
 use self::adaptive::{adaptive_of, token_scope_of};
 pub use self::change::ChangeReport;
 use self::change::{ChangePack, build as build_change, pending_of, read_change, scope_of};
+pub use self::navigation::{AdvisoryGap, ItemReach, PackNavigation, StopAdvisory};
+use self::navigation::{OpenGaps, navigation_of};
 
 /// The budget a pack gets when the caller names none.
 pub const DEFAULT_MAX_TOKENS: u64 = 2000;
@@ -264,6 +266,10 @@ pub struct GoalPack {
     pub budget: BudgetReport,
     /// The snapshot the pack is frozen on.
     pub snapshot: SnapshotInfo,
+    /// The way on: what expanding each delivered symbol reaches, and an
+    /// advisory on whether to stop. The links of the envelope are derived
+    /// from it.
+    pub navigation: PackNavigation,
     /// What the graph this answer was computed over covers, listed up to a
     /// bound: the totals are exact, the lists are a sample.
     pub coverage: PackCoverage,
@@ -452,14 +458,30 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
     };
 
     let coverage = PackCoverage::bounded(coverage);
+    let change_partial = change_report.as_ref().is_some_and(ChangeReport::is_partial);
+    let walk_unfinished = built_pack
+        .adaptive
+        .as_ref()
+        .is_some_and(|report| !expansion_finished(report.expansion.status));
     let partial = built_pack.omitted > 0
         || !built_pack.ambiguities.is_empty()
         || !built_pack.unresolved.is_empty()
-        || change_report.as_ref().is_some_and(ChangeReport::is_partial)
-        || built_pack
-            .adaptive
-            .as_ref()
-            .is_some_and(|report| !expansion_finished(report.expansion.status));
+        || change_partial
+        || walk_unfinished;
+    let navigation = navigation_of(
+        &built_pack.items,
+        &snapshot.graph,
+        &OpenGaps {
+            remaining: built_pack.remaining,
+            refused: built_pack.refused,
+            ambiguous: built_pack.ambiguities.len(),
+            unresolved: built_pack.unresolved.len(),
+            change_partial,
+            walk_unfinished,
+            graph_status: coverage.status.clone(),
+            graph_pending: coverage.pending_references_total,
+        },
+    );
     let status = if partial || coverage.status != "complete" {
         "partial"
     } else {
@@ -537,6 +559,7 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
         unresolved: built_pack.unresolved,
         budget: built_pack.budget,
         items: built_pack.items,
+        navigation,
         coverage,
         basis: graph_basis(workspace, &built),
         change: change_report,
@@ -595,8 +618,11 @@ pub fn render(answer: &Value) -> String {
 
 mod adaptive;
 mod change;
+mod navigation;
 
 #[cfg(test)]
 mod change_tests;
+#[cfg(test)]
+mod navigation_tests;
 #[cfg(test)]
 mod tests;

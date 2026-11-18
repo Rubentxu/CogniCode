@@ -103,3 +103,70 @@ async fn a_homonym_is_named_and_its_id_answers_with_evidence() {
     );
     assert_ne!(envelope["state"], "complete", "{envelope}");
 }
+
+/// A client moves through the levels of knowledge by following the links of
+/// the envelope, with the arguments they carry and nothing else: every
+/// level the pack offers answers, and the consumers come back by identity.
+#[tokio::test]
+async fn the_links_of_a_pack_walk_from_the_range_up_to_the_project() {
+    let repo = workspace();
+    let cache = tempfile::tempdir().expect("cache");
+    let mut session = McpSession::spawn_with_env(repo.path(), &[("XDG_CACHE_HOME", cache.path())])
+        .await
+        .expect("spawn");
+
+    let answer = session
+        .request(
+            "tools/call",
+            json!({"name": "pack", "arguments": {"intent": "parse run", "max_tokens": 4000}}),
+        )
+        .await
+        .expect("pack");
+    let envelope = answer["result"]["structuredContent"].clone();
+    let items = envelope["result"]["items"].as_array().expect("items");
+    let reach = envelope["result"]["navigation"]["reach"]
+        .as_array()
+        .expect("the pack publishes what expanding each symbol reaches");
+    assert_eq!(reach.len(), items.len(), "{envelope}");
+
+    let links: Vec<Value> = envelope["_links"]
+        .as_array()
+        .expect("links")
+        .iter()
+        .filter(|link| {
+            [
+                "read-range",
+                "inspect-contract",
+                "trace-consumers",
+                "inspect-component",
+                "inspect-overview",
+            ]
+            .contains(&link["rel"].as_str().unwrap_or_default())
+        })
+        .cloned()
+        .collect();
+    assert!(
+        links.iter().any(|link| link["rel"] == "read-range")
+            && links.iter().any(|link| link["rel"] == "inspect-contract"),
+        "{envelope}"
+    );
+    assert!(links.iter().all(|link| link["authority"] == "read"));
+
+    for link in &links {
+        let tool = link["tool"].as_str().expect("a tool");
+        let response = session
+            .request(
+                "tools/call",
+                json!({"name": tool, "arguments": link["required_args"]}),
+            )
+            .await
+            .expect("tools/call");
+        assert_eq!(
+            response["result"]["isError"].as_bool(),
+            Some(false),
+            "the link `{}` is an action that answers: {response}",
+            link["rel"]
+        );
+    }
+    session.shutdown().await;
+}

@@ -430,7 +430,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -1204,7 +1204,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -2399,7 +2399,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -3339,7 +3339,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -3631,7 +3631,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -3936,7 +3936,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -4297,7 +4297,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -4704,7 +4704,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -5151,7 +5151,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -5748,7 +5748,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -6442,7 +6442,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -7124,7 +7124,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -7644,7 +7644,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -7973,7 +7973,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -8630,7 +8630,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {
@@ -10154,7 +10154,7 @@
               "type": "string"
             },
             "rel": {
-              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+              "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
               "type": "string"
             },
             "required_args": {

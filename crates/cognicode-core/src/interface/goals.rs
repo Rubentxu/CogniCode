@@ -563,7 +563,13 @@ líneas omitidas nombradas) o cuerpo completo según el papel que juega (`--deta
 fija). El recorrido se acota con `--max-visits` y `--time-ms`, puede abstenerse \
 (`--expansion`) y su resultado se declara `expanded`, `abstained`, `partial`, \
 `cancelled` o `unknown`; sin relaciones fiables degrada al nombre y lo dice. La \
-puntuación ordena, no es una confianza. Es lectura orientativa: no calcula el impacto \
+puntuación ordena, no es una confianza. `navigation` dice, por símbolo entregado, \
+cuánto alcanza expandirlo (líneas de rango, llamantes y llamados directos del grafo) \
+y aconseja si parar (`may_stop` o `keep_going`) con los huecos abiertos y lo que nadie \
+evaluó: es un consejo sobre lo entregado, no un certificado de cobertura. El sobre \
+enlaza, desde el primer símbolo, el rango (L0), el fichero (L1), los consumidores (L2) \
+y, como inferencias, la comunidad (L3) y la visión del proyecto (L4); todos son \
+lecturas. Es lectura orientativa: no calcula el impacto \
 ni decide una puerta. Ejemplos: `cognicode pack --symbols src/lib.rs:helper:10`, \
 `cognicode pack --intent \"parse config\" --max-tokens 800`, `cognicode pack \
 --change-scope staged`, `cognicode pack --symbols save --mode diagnose`.",
@@ -847,6 +853,8 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "A `mode` selects adaptively with declared weights over a walk of the graph that depth, fan-out, a visit budget and a deadline bound; a walk that was cut, cancelled or found no relation it believes is reported and the pack is partial or degrades to the name. The score orders candidates, it is not a confidence. The weights were measured on a small synthetic corpus: the diagnose weights were searched, the refactor and architecture weights are declared and not validated on real projects."
                 .to_string(),
             "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known."
+                .to_string(),
+            "The navigation counts the direct edges the graph records and the envelope links the first symbol only; the stop advice is about the delivered page, not a certificate of coverage, and the community and overview levels are inferences of the graph, not facts of the code."
                 .to_string(),
         ]
     } else {

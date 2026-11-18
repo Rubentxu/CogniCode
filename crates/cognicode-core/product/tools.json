@@ -494,7 +494,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -1365,7 +1365,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -2001,7 +2001,7 @@
     {
       "name": "pack",
       "title": "The symbols that answer a request, with evidence and a budget that holds",
-      "description": "Return a context pack of symbols: for each one its unambiguous identity, the source range, the digest of the file, the reason it was chosen and the snapshot it was computed over. A bare name that several symbols declare is reported as an ambiguity and never resolved; pass the symbol id. The budget (`max_tokens`) bounds the rendered text and is measured on that same text: with a configured tokenizer the count is exact for it, without one it is a declared upper bound, never exact. The pack says what it delivered and what it left out and does not claim semantic coverage: nobody assesses it. When not everything fits it returns a `continuation_token` for the next page of the same snapshot. With `change_scope` (`staged`, `working_tree`, `commit`, `range` or `merge_candidate`) the seed is the exact lines of a change instead of symbols: the pack carries the symbols those lines touch and, for each, the consumers (when its signature changes), the contracts it implements and the tests the graph reaches, every item with the relation that justifies it. What the graph does not know (unresolved relations, files that could not be read, a merge with conflicts, symbols no test reaches) is listed as a gap and the pack is `partial`, never complete. With `mode` (`diagnose`, `refactor` or `architecture`) the selection is adaptive: it combines the name (IDF), a walk of the graph with Personalized PageRank, proximity and impact under the declared weights of the mode, and orders by incremental value per token without repeating what is already chosen; each symbol is shown as a signature, a slice (with the elided lines named) or the full body according to the part it plays (`detail` fixes it). The walk is bounded by `max_visits` and `time_ms`, may abstain (`expansion`), and ends `expanded`, `abstained`, `partial`, `cancelled` or `unknown`; without relations it believes it degrades to the name and says so. A score orders, it is not a confidence. It is an advisory reading selection: it computes no impact and decides no gate. Examples: `cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse config\" --max-tokens 800`, `cognicode pack --change-scope staged`, `cognicode pack --symbols save --mode diagnose`.",
+      "description": "Return a context pack of symbols: for each one its unambiguous identity, the source range, the digest of the file, the reason it was chosen and the snapshot it was computed over. A bare name that several symbols declare is reported as an ambiguity and never resolved; pass the symbol id. The budget (`max_tokens`) bounds the rendered text and is measured on that same text: with a configured tokenizer the count is exact for it, without one it is a declared upper bound, never exact. The pack says what it delivered and what it left out and does not claim semantic coverage: nobody assesses it. When not everything fits it returns a `continuation_token` for the next page of the same snapshot. With `change_scope` (`staged`, `working_tree`, `commit`, `range` or `merge_candidate`) the seed is the exact lines of a change instead of symbols: the pack carries the symbols those lines touch and, for each, the consumers (when its signature changes), the contracts it implements and the tests the graph reaches, every item with the relation that justifies it. What the graph does not know (unresolved relations, files that could not be read, a merge with conflicts, symbols no test reaches) is listed as a gap and the pack is `partial`, never complete. With `mode` (`diagnose`, `refactor` or `architecture`) the selection is adaptive: it combines the name (IDF), a walk of the graph with Personalized PageRank, proximity and impact under the declared weights of the mode, and orders by incremental value per token without repeating what is already chosen; each symbol is shown as a signature, a slice (with the elided lines named) or the full body according to the part it plays (`detail` fixes it). The walk is bounded by `max_visits` and `time_ms`, may abstain (`expansion`), and ends `expanded`, `abstained`, `partial`, `cancelled` or `unknown`; without relations it believes it degrades to the name and says so. A score orders, it is not a confidence. `navigation` says, per delivered symbol, what expanding it reaches (range lines, direct callers and callees of the graph) and advises whether to stop (`may_stop` or `keep_going`) with the open gaps and what nothing assessed: advice about the delivered page, not a certificate of coverage. The envelope links, from the first symbol, its range (L0), its file (L1), its consumers (L2) and, as inferences, the community (L3) and the project overview (L4); all are reads. It is an advisory reading selection: it computes no impact and decides no gate. Examples: `cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse config\" --max-tokens 800`, `cognicode pack --change-scope staged`, `cognicode pack --symbols save --mode diagnose`.",
       "category": "goal",
       "authority": "read",
       "stability": "stable",
@@ -2147,6 +2147,7 @@
         "The budget measures the rendered text, not the structured answer.",
         "A `mode` selects adaptively with declared weights over a walk of the graph that depth, fan-out, a visit budget and a deadline bound; a walk that was cut, cancelled or found no relation it believes is reported and the pack is partial or degrades to the name. The score orders candidates, it is not a confidence. The weights were measured on a small synthetic corpus: the diagnose weights were searched, the refactor and architecture weights are declared and not validated on real projects.",
         "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known.",
+        "The navigation counts the direct edges the graph records and the envelope links the first symbol only; the stop advice is about the delivered page, not a certificate of coverage, and the community and overview levels are inferences of the graph, not facts of the code.",
         "El goal trabaja sobre el grafo del workspace: necesita que `build_graph` lo tenga construido y al día."
       ]
     },
@@ -2793,7 +2794,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -4019,7 +4020,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -4327,7 +4328,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -4662,7 +4663,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -5074,7 +5075,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -5542,7 +5543,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -6053,7 +6054,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -6732,7 +6733,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -7444,7 +7445,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -8227,7 +8228,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -8829,7 +8830,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -9172,7 +9173,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -9959,7 +9960,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
@@ -11766,7 +11767,7 @@
                 "type": "string"
               },
               "rel": {
-                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o\n`retry`.",
+                "description": "Qué clase de enlace es: `resolve-ambiguity`, `continue`,\n`inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,\n`retry` o, para bajar y subir por los niveles de conocimiento desde\nun `pack`, `read-range`, `inspect-contract`, `trace-consumers`,\n`inspect-component` e `inspect-overview`.",
                 "type": "string"
               },
               "required_args": {
