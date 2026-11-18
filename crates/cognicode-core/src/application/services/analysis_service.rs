@@ -355,7 +355,11 @@ impl AnalysisService {
         self
     }
 
-    /// Returns the graph cache for accessing the project graph
+    /// Returns the graph cache for accessing the project graph.
+    ///
+    /// Replacing the graph through this handle bypasses the build report;
+    /// consumers therefore see coverage as `unknown` unless the caller also
+    /// records a measure for the new graph revision.
     pub fn graph_cache(&self) -> Arc<dyn SharedGraph> {
         self.graph_cache.clone()
     }
@@ -593,7 +597,8 @@ impl AnalysisService {
         // the state the service keeps for later queries.
         let report = self.build_project_graph_filtered(project_dir, &[project_dir])?;
         *self.last_build_report.lock().unwrap() = Some(report.clone());
-        self.graph_cache.replace(report.graph);
+        self.graph_cache.replace(report.graph.clone());
+        self.record_build_measure(project_dir, &self.get_project_graph(), &report);
         Ok(())
     }
 
@@ -650,6 +655,11 @@ impl AnalysisService {
         }
         let graph = store.get_call_graph();
         self.graph_cache.replace(graph);
+        self.record_unmeasured_graph(
+            project_dir,
+            &self.get_project_graph(),
+            crate::application::analysis_basis::GraphSource::Built,
+        );
         Ok(())
     }
 
@@ -766,6 +776,7 @@ impl AnalysisService {
 
         *self.last_build_report.lock().unwrap() = Some(final_report.clone());
         self.graph_cache.replace(final_report.graph.clone());
+        self.record_build_measure(project_dir, &self.get_project_graph(), &final_report);
         Ok(final_report)
     }
 
@@ -1586,11 +1597,12 @@ impl AnalysisService {
                 rejected: k0_rejected,
             }
         };
-        *self.last_build_report.lock().unwrap() =
-            Some(crate::infrastructure::graph::per_file_graph::BuildReport {
-                graph: call_graph,
-                status,
-            });
+        let report = crate::infrastructure::graph::per_file_graph::BuildReport {
+            graph: call_graph,
+            status,
+        };
+        *self.last_build_report.lock().unwrap() = Some(report.clone());
+        self.record_build_measure(dir, &self.get_project_graph(), &report);
 
         Ok(())
     }
@@ -1685,6 +1697,61 @@ impl AnalysisService {
         &self,
     ) -> Option<crate::infrastructure::graph::per_file_graph::BuildReport> {
         self.last_build_report.lock().unwrap().clone()
+    }
+
+    /// Records measured build coverage against the graph revision just published.
+    fn record_build_measure(
+        &self,
+        project_dir: &Path,
+        graph: &CallGraph,
+        report: &crate::infrastructure::graph::per_file_graph::BuildReport,
+    ) {
+        let coverage = crate::application::services::analyze::coverage_verdict(
+            crate::application::analysis_basis::GraphSource::Built,
+            Some(report),
+            &[],
+            crate::application::services::analyze::holds_material(graph.symbol_count()),
+        );
+        self.record_graph_measure(
+            project_dir,
+            graph,
+            coverage,
+            crate::application::analysis_basis::GraphSource::Built,
+        );
+    }
+
+    /// Records an explicitly unmeasured graph, so an older revision's
+    /// coverage cannot be attributed to a graph loaded from an external store.
+    pub(crate) fn record_unmeasured_graph(
+        &self,
+        project_dir: &Path,
+        graph: &CallGraph,
+        source: crate::application::analysis_basis::GraphSource,
+    ) {
+        self.record_graph_measure(
+            project_dir,
+            graph,
+            crate::application::services::analyze::Coverage::Unmeasured,
+            source,
+        );
+    }
+
+    fn record_graph_measure(
+        &self,
+        project_dir: &Path,
+        graph: &CallGraph,
+        coverage: crate::application::services::analyze::Coverage,
+        source: crate::application::analysis_basis::GraphSource,
+    ) {
+        self.last_measure
+            .record(crate::application::graph_measure::GraphMeasure::new(
+                self.current_graph_revision(),
+                graph,
+                coverage,
+                source,
+                project_dir.to_string_lossy().into_owned(),
+                None,
+            ));
     }
 
     /// The coverage of the graph the service holds.

@@ -305,6 +305,11 @@ impl WorkspaceSession {
                 && graph.symbol_count() > 0
             {
                 self.analysis.graph_cache().replace(graph);
+                self.analysis.record_unmeasured_graph(
+                    &self.workspace_root,
+                    &self.analysis.get_project_graph(),
+                    crate::application::analysis_basis::GraphSource::Cache,
+                );
                 return Ok(());
             }
         }
@@ -346,6 +351,11 @@ impl WorkspaceSession {
             Ok(Some(graph)) => {
                 if graph.symbol_count() > 0 {
                     self.analysis.graph_cache().replace(graph);
+                    self.analysis.record_unmeasured_graph(
+                        &self.workspace_root,
+                        &self.analysis.get_project_graph(),
+                        crate::application::analysis_basis::GraphSource::Cache,
+                    );
                     Ok(true)
                 } else {
                     Ok(false)
