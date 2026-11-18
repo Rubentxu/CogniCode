@@ -482,6 +482,7 @@ mod tests {
                 start_line: line + 1,
                 end_line: line + 3,
                 header: source.lines().nth(line as usize)?.to_string(),
+                body_statements: Vec::new(),
             })
         }
     }
@@ -553,6 +554,7 @@ mod tests {
                 start_line: 1,
                 end_line: 3,
                 header: source.lines().next()?.to_string(),
+                body_statements: Vec::new(),
             })
         }
     }

@@ -554,15 +554,25 @@ trae los símbolos que esas líneas tocan, y de ellos los consumidores (si cambi
 la firma), los contratos que implementan y los tests que el grafo alcanza, cada \
 uno con la relación que lo justifica. Lo que el grafo no sabe (relaciones sin \
 resolver, ficheros que no se pudieron leer, un merge con conflictos, símbolos sin \
-test) sale como hueco y el paquete queda `partial`, nunca completo. Es lectura \
-orientativa: no calcula el impacto ni decide una puerta. Ejemplos: \
-`cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse \
-config\" --max-tokens 800`, `cognicode pack --change-scope staged`.",
+test) sale como hueco y el paquete queda `partial`, nunca completo. Con `--mode` \
+(`diagnose`, `refactor` o `architecture`) la selección es adaptativa: combina el \
+nombre (IDF), un recorrido del grafo con PageRank personalizado, la cercanía y el \
+impacto con los pesos declarados del modo, y ordena por valor incremental por token \
+sin repetir lo ya elegido; cada símbolo sale como firma, fragmento (`slice`, con las \
+líneas omitidas nombradas) o cuerpo completo según el papel que juega (`--detail` lo \
+fija). El recorrido se acota con `--max-visits` y `--time-ms`, puede abstenerse \
+(`--expansion`) y su resultado se declara `expanded`, `abstained`, `partial`, \
+`cancelled` o `unknown`; sin relaciones fiables degrada al nombre y lo dice. La \
+puntuación ordena, no es una confianza. Es lectura orientativa: no calcula el impacto \
+ni decide una puerta. Ejemplos: `cognicode pack --symbols src/lib.rs:helper:10`, \
+`cognicode pack --intent \"parse config\" --max-tokens 800`, `cognicode pack \
+--change-scope staged`, `cognicode pack --symbols save --mode diagnose`.",
     examples: &[
         "cognicode pack --symbols src/lib.rs:helper:10",
         "cognicode pack --intent \"parse config\" --max-tokens 800",
         "cognicode pack --change-scope staged",
         "cognicode pack --change-scope commit --head HEAD",
+        "cognicode pack --symbols save --mode diagnose --max-tokens 1500",
     ],
     authority: GoalAuthority::Read,
     minimum_phase: GoalPhase::Analyze,
@@ -833,6 +843,8 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select."
                 .to_string(),
             "The budget measures the rendered text, not the structured answer."
+                .to_string(),
+            "A `mode` selects adaptively with declared weights over a walk of the graph that depth, fan-out, a visit budget and a deadline bound; a walk that was cut, cancelled or found no relation it believes is reported and the pack is partial or degrades to the name. The score orders candidates, it is not a confidence. The weights were measured on a small synthetic corpus: the diagnose weights were searched, the refactor and architecture weights are declared and not validated on real projects."
                 .to_string(),
             "A change scope reads the Git repository at the workspace root and its changed lines, never a heuristic: an unreadable, conflicted or unclassified side is a gap and the pack is partial. The consumers and tests are the relations the graph holds, not an impact analysis, and the pack decides nothing about a merge. Calls written inside macros and relations the reader does not publish (such as a Rust trait implementation) are not in the graph and so are not seen; a root commit has no parent and is refused; the consumers of a deleted symbol are not known."
                 .to_string(),

@@ -33,9 +33,9 @@ use serde_json::Value;
 use crate::application::context_pack::change::input::ChangeBytes;
 use crate::application::context_pack::render::{RenderView, render_with_notes};
 use crate::application::context_pack::{
-    AmbiguousAnchor, BudgetReport, ContextPackService, MeasureKind, Omission, PackItem,
-    PackRequest, Ranked, Relevance, SelectionRequest, SnapshotView, SourceReader, Utf8UpperBound,
-    measure_named,
+    AdaptiveReport, AmbiguousAnchor, BudgetReport, ContextPackService, ExpansionStatus,
+    MeasureKind, Omission, PackItem, PackRequest, Ranked, Relevance, SelectionRequest,
+    SnapshotView, SourceReader, Utf8UpperBound, measure_named,
 };
 use crate::application::graph_snapshot::source_digest;
 use crate::domain::aggregates::call_graph::CallGraph;
@@ -48,6 +48,7 @@ use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::{GoalBasis, graph_basis};
 use crate::interface::project_graph::{ProjectGraph, service_with_graph};
 
+use self::adaptive::{adaptive_of, token_scope_of};
 pub use self::change::ChangeReport;
 use self::change::{ChangePack, build as build_change, pending_of, read_change, scope_of};
 
@@ -97,6 +98,35 @@ pub struct PackInput {
     /// the branch merged in a `merge_candidate`.
     #[serde(default)]
     pub head: Option<String>,
+    /// What the pack is for, which turns on the adaptive selection:
+    /// `diagnose` (find a defect: the neighbours in the call chain and the
+    /// code that exercises the suspect), `refactor` (change safely: who
+    /// depends on it and the contract it keeps) or `architecture` (how the
+    /// parts relate: the central symbols). The mode picks the weights of
+    /// the signals and how much of each symbol is shown; the answer names
+    /// them. Not passed with `change_scope`.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// How much of each symbol an adaptive pack shows: `auto` (by the part
+    /// the symbol plays), `signature`, `slice` (the header and the
+    /// statements that matter, with the elided lines named) or `full`.
+    /// Needs `mode`.
+    #[serde(default)]
+    pub detail: Option<String>,
+    /// Whether an adaptive pack walks the graph beyond the named symbols:
+    /// `auto` (not for a simple lookup the name answers), `always` or
+    /// `never`. Needs `mode`.
+    #[serde(default)]
+    pub expansion: Option<String>,
+    /// The most symbols the walk of the graph visits. Needs `mode`. A walk
+    /// that hits it is reported `partial`.
+    #[serde(default)]
+    pub max_visits: Option<u64>,
+    /// The milliseconds the walk of the graph may take. Needs `mode`. A
+    /// walk that runs out is reported `partial`, and its selection depends
+    /// on how far it got, so it is not reproducible.
+    #[serde(default)]
+    pub time_ms: Option<u64>,
 }
 
 /// How much of the candidate list a page delivered.
@@ -244,6 +274,11 @@ pub struct GoalPack {
     /// request, with the changed files and symbols and what is not known.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub change: Option<ChangeReport>,
+    /// How an adaptive pack chose: the policy and its weights, how the walk
+    /// of the graph ended, what the selection could not use and what a score
+    /// means. Present only when `mode` was passed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adaptive: Option<AdaptiveReport>,
 }
 
 /// The ranker of the product.
@@ -327,6 +362,7 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
         .map(str::trim)
         .filter(|text| !text.is_empty());
     let scope = scope_of(input)?;
+    let adaptive = adaptive_of(input, scope.is_some())?;
     if scope.is_none() && input.symbols.is_empty() && intent.is_none() {
         return Err(
             "a pack needs at least one symbol, an intent or a change scope: pass `symbols`, \
@@ -356,7 +392,11 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
         .as_ref()
         .map(|scope| read_change(workspace, scope))
         .transpose()?;
-    let token_scope = change.as_ref().map(ChangeBytes::digest).unwrap_or_default();
+    let token_scope = match (&change, &adaptive) {
+        (Some(change), _) => ChangeBytes::digest(change),
+        (None, Some(adaptive)) => token_scope_of(adaptive, input),
+        (None, None) => String::new(),
+    };
 
     let built = match session {
         Some(session) => session.project_graph(workspace, cache_root)?,
@@ -404,6 +444,7 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
                     },
                     max_tokens,
                     continuation: input.continuation_token.clone(),
+                    adaptive,
                 })
                 .map_err(|error| error.to_string())?;
             (page, None)
@@ -414,7 +455,11 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
     let partial = built_pack.omitted > 0
         || !built_pack.ambiguities.is_empty()
         || !built_pack.unresolved.is_empty()
-        || change_report.as_ref().is_some_and(ChangeReport::is_partial);
+        || change_report.as_ref().is_some_and(ChangeReport::is_partial)
+        || built_pack
+            .adaptive
+            .as_ref()
+            .is_some_and(|report| !expansion_finished(report.expansion.status));
     let status = if partial || coverage.status != "complete" {
         "partial"
     } else {
@@ -437,6 +482,19 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
             change.gaps_total
         );
     }
+    if let Some(report) = &built_pack.adaptive {
+        summary = format!(
+            "mode {}, expansion {}: {summary}",
+            report.policy.mode.map_or("custom", |mode| mode.code()),
+            report.expansion.status.code()
+        );
+    }
+    let retrieval = match &built_pack.adaptive {
+        Some(_) => "anchors, name relevance (IDF), a walk of the graph with personalized \
+                    PageRank, proximity and impact, ordered by value per token without repeats"
+            .to_string(),
+        None => "anchors, name relevance (IDF) and direct relations".to_string(),
+    };
     let truncated = built_pack.remaining > 0;
     let truncation_reason = truncated.then(|| {
         if built_pack.continuation_token.is_some() {
@@ -455,7 +513,7 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
             delivered: built_pack.items.len(),
             candidates: built_pack.candidates,
             partial,
-            retrieval: "anchors, name relevance (IDF) and direct relations".to_string(),
+            retrieval,
         },
         semantic_coverage: SemanticCoverage {
             assessed: false,
@@ -482,7 +540,19 @@ pub fn pack(environment: &GoalEnvironment, input: &PackInput) -> Result<GoalPack
         coverage,
         basis: graph_basis(workspace, &built),
         change: change_report,
+        adaptive: built_pack.adaptive,
     })
+}
+
+/// Whether the walk of the graph did what it was asked: it went all the way,
+/// or the request did not need it. A walk that a bound stopped, that was
+/// cancelled or that found no relation to follow leaves the selection short
+/// of what the graph could have said.
+fn expansion_finished(status: ExpansionStatus) -> bool {
+    matches!(
+        status,
+        ExpansionStatus::Expanded | ExpansionStatus::Abstained
+    )
 }
 
 fn measure_label(kind: &MeasureKind) -> String {
@@ -505,11 +575,12 @@ pub fn run(ctx: &GoalEnvironment, arguments: &Value) -> Result<Value, String> {
 pub fn render(answer: &Value) -> String {
     let pack: GoalPack = serde_json::from_value(answer.clone())
         .expect("the answer of the goal `pack` is the answer its own type describes");
-    let notes = pack
-        .change
-        .as_ref()
-        .map(|change| change.notes.as_slice())
-        .unwrap_or_default();
+    let notes: Vec<String> = pack
+        .adaptive
+        .iter()
+        .flat_map(AdaptiveReport::notes)
+        .chain(pack.change.iter().flat_map(|change| change.notes.clone()))
+        .collect();
     render_with_notes(
         &RenderView {
             snapshot_digest: &pack.snapshot.digest,
@@ -518,10 +589,11 @@ pub fn render(answer: &Value) -> String {
             refused: pack.refused,
             continuation: pack.continuation_token.as_deref(),
         },
-        notes,
+        &notes,
     )
 }
 
+mod adaptive;
 mod change;
 
 #[cfg(test)]
