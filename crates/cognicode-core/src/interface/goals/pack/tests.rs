@@ -64,8 +64,18 @@ fn a_rust_homonym_is_ambiguous_and_its_id_resolves_with_evidence() {
     assert_eq!(item["id"], candidates[0]);
     assert_eq!(item["reason"], "anchor");
     assert_eq!(item["range_basis"], "declaration");
-    assert!(item["source_digest"].as_str().unwrap().starts_with("sha256:"));
-    assert!(item["signature"].as_str().unwrap().starts_with("pub fn parse("));
+    assert!(
+        item["source_digest"]
+            .as_str()
+            .unwrap()
+            .starts_with("sha256:")
+    );
+    assert!(
+        item["signature"]
+            .as_str()
+            .unwrap()
+            .starts_with("pub fn parse(")
+    );
     assert!(item["range"]["end_line"].as_u64() >= item["range"]["start_line"].as_u64());
     assert_eq!(one["snapshot"]["files"], 2);
     assert_eq!(one["semantic_coverage"]["assessed"], false);
@@ -103,7 +113,12 @@ fn a_java_homonym_is_ambiguous_by_name_and_exact_by_id() {
     assert_eq!(candidates.len(), 2, "answer: {answer}");
     let one = run_pack(dir.path(), json!({"symbols": [candidates[1]]})).unwrap();
     assert_eq!(one["items"][0]["id"], candidates[1]);
-    assert!(one["items"][0]["file"].as_str().unwrap().ends_with("B.java"));
+    assert!(
+        one["items"][0]["file"]
+            .as_str()
+            .unwrap()
+            .ends_with("B.java")
+    );
 }
 
 #[test]
@@ -129,8 +144,11 @@ fn a_kotlin_homonym_is_ambiguous_by_name_and_exact_by_id() {
 #[test]
 fn a_tokenizer_that_is_not_shipped_is_refused() {
     let dir = rust_project();
-    let error = run_pack(dir.path(), json!({"symbols": ["run"], "tokenizer": "cl100k"}))
-        .unwrap_err();
+    let error = run_pack(
+        dir.path(),
+        json!({"symbols": ["run"], "tokenizer": "cl100k"}),
+    )
+    .unwrap_err();
     assert!(error.contains("lexical-v1"));
 }
 
@@ -195,7 +213,11 @@ fn a_budget_that_fits_no_candidate_says_so_and_offers_no_page_to_loop_on() {
     let dir = rust_project();
     let probe = run_pack(dir.path(), json!({"symbols": ["parse"]})).unwrap();
     let candidates = ids_named(&probe, "parse");
-    let page = run_pack(dir.path(), json!({"symbols": [candidates[0]], "max_tokens": 5})).unwrap();
+    let page = run_pack(
+        dir.path(),
+        json!({"symbols": [candidates[0]], "max_tokens": 5}),
+    )
+    .unwrap();
     assert!(page["items"].as_array().unwrap().is_empty());
     assert_eq!(page["truncated"], true);
     assert_eq!(page["truncation_reason"], "budget_too_small");

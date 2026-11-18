@@ -4,7 +4,7 @@
 //! module only turns a declaration into a terminal command and reads the
 //! matches back as the arguments the goal expects.
 
-use clap::{Arg, ArgMatches, Command};
+use clap::{Arg, ArgAction, ArgMatches, Command};
 use cognicode_core::interface::goals::{
     GoalSpec, help_text, input_schema, registry, required_names,
 };
@@ -65,12 +65,21 @@ pub fn clap_command(goal: &GoalSpec) -> Command {
         if argument_type(&property) == Some("boolean") {
             arg = arg.num_args(0..=1).default_missing_value("true");
         }
+        // A list is a repeatable flag: `--symbols a --symbols b`. A comma
+        // is not a separator, because the values (symbol ids) may hold one.
+        if argument_type(&property) == Some("array") {
+            arg = arg.action(ArgAction::Append);
+        }
         if required.contains(&name.as_str()) {
             arg = arg.required(true);
         }
         // A `null` default is the absence of the argument, not a value to
         // hand the goal: an optional flag nobody wrote stays unset.
-        if let Some(default) = property.get("default").filter(|value| !value.is_null()) {
+        // The default of a list is the empty list: no flag written, no value.
+        if let Some(default) = property
+            .get("default")
+            .filter(|value| !value.is_null() && argument_type(&property) != Some("array"))
+        {
             arg = arg.default_value(default_value_for(default));
         }
         command = command.arg(arg);
@@ -110,6 +119,12 @@ pub fn arguments_from_matches(goal: &GoalSpec, matches: &ArgMatches) -> Value {
                 .ok()
                 .flatten()
                 .map(|value| Value::from(*value)),
+            // A list arrives as the values of a repeatable flag.
+            Some("array") => matches
+                .try_get_many::<String>(&name)
+                .ok()
+                .flatten()
+                .map(|values| Value::Array(values.cloned().map(Value::String).collect())),
             // Un objeto en la terminal llega como **texto** JSON, porque un
             // flag lleva texto. Se lee aquí para que la terminal y el cable
             // publiquen el mismo valor —un objeto— y no el mismo texto: el

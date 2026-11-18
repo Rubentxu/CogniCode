@@ -247,13 +247,17 @@ pub fn pack(
             "`max_tokens` is {max_tokens} and the most a pack can be asked for is {MAX_TOKENS_LIMIT}."
         ));
     }
-    let measure: Box<dyn crate::application::context_pack::TokenMeasure> =
-        match input.tokenizer.as_deref() {
-            None => Box::new(Utf8UpperBound),
-            Some(name) => measure_named(name).ok_or_else(|| {
-                format!("`{name}` is not a tokenizer this build ships: the one it ships is `lexical-v1`.")
-            })?,
-        };
+    let measure: Box<dyn crate::application::context_pack::TokenMeasure> = match input
+        .tokenizer
+        .as_deref()
+    {
+        None => Box::new(Utf8UpperBound),
+        Some(name) => measure_named(name).ok_or_else(|| {
+            format!(
+                "`{name}` is not a tokenizer this build ships: the one it ships is `lexical-v1`."
+            )
+        })?,
+    };
 
     let (_service, built) = service_with_graph(workspace, cache_root)?;
     let snapshot = snapshot_of(&built)?;

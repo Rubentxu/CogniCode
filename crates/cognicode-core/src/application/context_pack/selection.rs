@@ -192,6 +192,65 @@ fn resolve(graph: &CallGraph, anchor: &str) -> Resolution {
     }
 }
 
+/// The terms of an intent: runs of letters, digits and underscores, lowercase,
+/// each once.
+///
+/// The ranker scores identifiers, so a phrase only finds something through
+/// the words it is made of.
+fn intent_terms(intent: &str) -> Vec<String> {
+    let mut terms: Vec<String> = Vec::new();
+    for term in intent
+        .split(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .filter(|term| !term.is_empty())
+        .map(str::to_lowercase)
+    {
+        if !terms.contains(&term) {
+            terms.push(term);
+        }
+    }
+    terms
+}
+
+/// The candidates the intent names, best first.
+///
+/// Each term is ranked on its own and a symbol's scores add up over the
+/// terms it matches; ties break on the id, so the order is deterministic.
+/// A symbol whose name is one of the terms is an exact match.
+fn rank_intent(graph: &CallGraph, relevance: &dyn Relevance, intent: &str) -> Vec<Candidate> {
+    let terms = intent_terms(intent);
+    let mut scores: Vec<(SymbolId, f64)> = Vec::new();
+    for term in &terms {
+        for ranked in relevance.rank(term, INTENT_CANDIDATES) {
+            match scores.iter_mut().find(|(id, _)| *id == ranked.id) {
+                Some((_, total)) => *total += ranked.score,
+                None => scores.push((ranked.id, ranked.score)),
+            }
+        }
+    }
+    scores.sort_by(|(a_id, a), (b_id, b)| {
+        b.total_cmp(a)
+            .then_with(|| a_id.as_str().cmp(b_id.as_str()))
+    });
+    scores.truncate(INTENT_CANDIDATES);
+    scores
+        .into_iter()
+        .map(|(id, score)| {
+            let exact = graph
+                .get_symbol(&id)
+                .is_some_and(|symbol| terms.contains(&symbol.name().to_lowercase()));
+            Candidate {
+                id,
+                reason: if exact {
+                    Reason::ExactName
+                } else {
+                    Reason::NameRelevance
+                },
+                score,
+            }
+        })
+        .collect()
+}
+
 /// Selects the candidates of `request` over `graph`.
 pub fn select(
     graph: &CallGraph,
@@ -231,20 +290,7 @@ pub fn select(
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        for ranked in relevance.rank(intent, INTENT_CANDIDATES) {
-            let exact = graph
-                .get_symbol(&ranked.id)
-                .is_some_and(|symbol| symbol.name().eq_ignore_ascii_case(intent));
-            proposals.push(Candidate {
-                id: ranked.id,
-                reason: if exact {
-                    Reason::ExactName
-                } else {
-                    Reason::NameRelevance
-                },
-                score: ranked.score,
-            });
-        }
+        proposals.extend(rank_intent(graph, relevance, intent));
     }
 
     for anchor in &anchors {

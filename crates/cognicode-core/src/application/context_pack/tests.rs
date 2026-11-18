@@ -75,6 +75,25 @@ impl Relevance for Ranking {
     }
 }
 
+/// Ranks by the single term it is asked for: the identifier ranker does not
+/// split a phrase, so a phrase only finds something through its terms.
+struct PerTerm(HashMap<&'static str, Vec<(SymbolId, f64)>>);
+
+impl Relevance for PerTerm {
+    fn rank(&self, term: &str, max: usize) -> Vec<Ranked> {
+        self.0
+            .get(term)
+            .into_iter()
+            .flatten()
+            .take(max)
+            .map(|(id, score)| Ranked {
+                id: id.clone(),
+                score: *score,
+            })
+            .collect()
+    }
+}
+
 struct Fixture {
     snapshot: SnapshotView,
     files: Files,
@@ -284,7 +303,10 @@ fn a_budget_too_small_for_one_item_gives_an_empty_text_within_the_limit() {
     let id = f.ids["run"].to_string();
     let p = default_pack(&f, &[&id], 3);
     assert!(p.items.is_empty());
-    assert!(p.continuation_token.is_none(), "a page that cannot progress offers no token");
+    assert!(
+        p.continuation_token.is_none(),
+        "a page that cannot progress offers no token"
+    );
     assert!(p.budget.used.tokens <= 3);
     assert_eq!(p.omitted, p.candidates);
 }
@@ -452,6 +474,39 @@ fn the_intent_ranking_contributes_name_relevance_candidates() {
     assert_eq!(p.items.len(), 1);
     assert_eq!(p.items[0].reason, "name_relevance");
     assert_eq!(p.items[0].score, 2.5);
+}
+
+#[test]
+fn a_phrase_intent_is_ranked_term_by_term_and_the_scores_add() {
+    let f = fixture();
+    let (run, a, b) = (
+        f.ids["run"].clone(),
+        f.ids["a_parse"].clone(),
+        f.ids["b_parse"].clone(),
+    );
+    let ranking = PerTerm(HashMap::from([
+        ("parse", vec![(a.clone(), 2.0), (b.clone(), 1.0)]),
+        ("run", vec![(run.clone(), 1.5), (a.clone(), 0.5)]),
+    ]));
+    let selection = select(
+        &f.snapshot.graph,
+        &ranking,
+        &SelectionRequest {
+            anchors: vec![],
+            intent: Some("Parse, then run".to_string()),
+        },
+    );
+
+    let order: Vec<&SymbolId> = selection.candidates.iter().map(|c| &c.id).collect();
+    assert_eq!(order, vec![&a, &run, &b], "2.5, 1.5, 1.0");
+    assert_eq!(selection.candidates[0].score, 2.5);
+    assert!(
+        selection
+            .candidates
+            .iter()
+            .all(|c| c.reason.code() == "exact_name"),
+        "each one is named exactly by one of the terms"
+    );
 }
 
 #[test]
