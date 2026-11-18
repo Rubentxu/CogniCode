@@ -291,11 +291,23 @@ impl Holes {
 }
 
 /// El número de elementos de un campo, si la respuesta lo declara.
+///
+/// Una respuesta que lista solo una muestra de un campo declara cuántos hay
+/// en total en `<campo>_total`: ese número manda sobre la longitud de la
+/// muestra.
 fn count_of(result: &Value, names: &[&str]) -> Option<usize> {
-    names
-        .iter()
-        .find_map(|name| result.get(*name).and_then(Value::as_array))
-        .map(|items| items.len())
+    names.iter().find_map(|name| {
+        result
+            .get(format!("{name}_total"))
+            .and_then(Value::as_u64)
+            .map(|total| total as usize)
+            .or_else(|| {
+                result
+                    .get(*name)
+                    .and_then(Value::as_array)
+                    .map(|items| items.len())
+            })
+    })
 }
 
 /// La palabra, en singular o en plural, según lo que se cuenta.

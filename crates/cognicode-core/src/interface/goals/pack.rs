@@ -40,7 +40,9 @@ use crate::application::graph_snapshot::source_digest;
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::infrastructure::graph::analytics::ranking_stats::RankingStats;
 use crate::infrastructure::semantic::TreeSitterDeclarations;
-use crate::interface::coverage::CoverageInfo;
+use crate::interface::coverage::{
+    CoverageInfo, PendingReferenceInfo, RejectedRelationInfo, SkippedFileInfo,
+};
 use crate::interface::goals::GoalEnvironment;
 use crate::interface::goals::common::{GoalBasis, graph_basis};
 use crate::interface::project_graph::{ProjectGraph, service_with_graph};
@@ -111,6 +113,61 @@ pub struct SnapshotInfo {
     pub files: usize,
 }
 
+/// How many entries of each list of the coverage the pack publishes.
+const COVERAGE_LISTED: usize = 10;
+
+/// The coverage of the graph, bounded.
+///
+/// The graph of a real project leaves thousands of references unresolved. The
+/// budget of a pack bounds what an agent reads, so the answer carries the
+/// exact totals and a short sample of each list, never the whole of them;
+/// the tools that own those lists publish them in full.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+pub struct PackCoverage {
+    /// The word the coverage is published with: `complete`, `partial`,
+    /// `unknown` or `unsupported`.
+    pub status: String,
+    /// A sample of the files the walk could not read.
+    pub skipped_files: Vec<SkippedFileInfo>,
+    /// How many files the walk could not read.
+    pub skipped_files_total: usize,
+    /// A sample of the references the graph could not tie to a declaration.
+    pub pending_references: Vec<PendingReferenceInfo>,
+    /// How many references the graph could not tie to a declaration.
+    pub pending_references_total: usize,
+    /// A sample of the relations the repository refused.
+    pub rejected_relations: Vec<RejectedRelationInfo>,
+    /// How many relations the repository refused.
+    pub rejected_relations_total: usize,
+}
+
+impl PackCoverage {
+    /// The first entries of each list of `coverage`, and the exact totals.
+    fn bounded(coverage: CoverageInfo) -> Self {
+        Self {
+            skipped_files_total: coverage.skipped_files.len(),
+            pending_references_total: coverage.pending_references.len(),
+            rejected_relations_total: coverage.rejected_relations.len(),
+            skipped_files: coverage
+                .skipped_files
+                .into_iter()
+                .take(COVERAGE_LISTED)
+                .collect(),
+            pending_references: coverage
+                .pending_references
+                .into_iter()
+                .take(COVERAGE_LISTED)
+                .collect(),
+            rejected_relations: coverage
+                .rejected_relations
+                .into_iter()
+                .take(COVERAGE_LISTED)
+                .collect(),
+            status: coverage.status,
+        }
+    }
+}
+
 /// The answer of the goal `pack`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct GoalPack {
@@ -158,8 +215,9 @@ pub struct GoalPack {
     pub budget: BudgetReport,
     /// The snapshot the pack is frozen on.
     pub snapshot: SnapshotInfo,
-    /// What the graph this answer was computed over covers.
-    pub coverage: CoverageInfo,
+    /// What the graph this answer was computed over covers, listed up to a
+    /// bound: the totals are exact, the lists are a sample.
+    pub coverage: PackCoverage,
     /// What the graph was built from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub basis: Option<GoalBasis>,
@@ -287,7 +345,7 @@ pub fn pack(
         })
         .map_err(|error| error.to_string())?;
 
-    let coverage = CoverageInfo::of(&built.coverage);
+    let coverage = PackCoverage::bounded(CoverageInfo::of(&built.coverage));
     let partial = built_pack.omitted > 0
         || !built_pack.ambiguities.is_empty()
         || !built_pack.unresolved.is_empty();

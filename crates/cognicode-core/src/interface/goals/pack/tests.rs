@@ -224,3 +224,34 @@ fn a_budget_that_fits_no_candidate_says_so_and_offers_no_page_to_loop_on() {
     assert!(page.get("continuation_token").is_none());
     assert!(page["budget"]["used"]["tokens"].as_u64().unwrap() <= 5);
 }
+
+#[test]
+fn the_coverage_is_a_bounded_sample_with_exact_totals() {
+    use crate::interface::coverage::PendingReason;
+
+    let pending: Vec<PendingReferenceInfo> = (0..45)
+        .map(|n| PendingReferenceInfo {
+            file: format!("src/f{n}.rs"),
+            line: Some(1),
+            target: format!("t{n}"),
+            kind: "call".to_string(),
+            reason: PendingReason::Unresolved,
+            candidates: None,
+        })
+        .collect();
+    let coverage = PackCoverage::bounded(CoverageInfo {
+        status: "partial".to_string(),
+        skipped_files: vec![],
+        pending_references: pending,
+        rejected_relations: vec![],
+    });
+
+    assert_eq!(coverage.pending_references_total, 45);
+    assert_eq!(coverage.pending_references.len(), COVERAGE_LISTED);
+    assert_eq!(
+        coverage.pending_references[0].target, "t0",
+        "the first ones"
+    );
+    assert_eq!(coverage.skipped_files_total, 0);
+    assert_eq!(coverage.status, "partial");
+}

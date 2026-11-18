@@ -342,6 +342,27 @@ fn a_pack_with_a_stale_omission_offers_the_reindex() {
     assert!(envelope.links.iter().all(|link| link.rel != "reindex"));
 }
 
+/// Una respuesta que lista una muestra declara el total aparte: el sobre
+/// cuenta el total, no la muestra.
+#[test]
+fn a_sampled_list_is_counted_by_its_declared_total() {
+    let result = json!({
+        "status": "partial", "summary": "s",
+        "coverage": {
+            "status": "partial",
+            "skipped_files": [], "skipped_files_total": 0,
+            "pending_references": [{"target": "x"}], "pending_references_total": 4200,
+            "rejected_relations": [], "rejected_relations_total": 3
+        }
+    });
+    let envelope = envelope_for("pack", &Map::new(), &result, &context());
+    let coverage = envelope.basis.coverage.expect("the answer declares holes");
+
+    assert_eq!(coverage.pending_references, 4200);
+    assert_eq!(coverage.rejected_relationships, 3);
+    assert_eq!(coverage.skipped_files, 0);
+}
+
 /// El fan-in alto: un símbolo del que dependen muchos.
 #[test]
 fn a_hot_symbol_offers_its_callers() {
