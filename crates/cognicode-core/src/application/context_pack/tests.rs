@@ -75,16 +75,23 @@ impl Relevance for Ranking {
     }
 }
 
-/// Ranks by the single term it is asked for: the identifier ranker does not
-/// split a phrase, so a phrase only finds something through its terms.
-struct PerTerm(HashMap<&'static str, Vec<(SymbolId, f64)>>);
+/// Answers only for the exact query it is given, and records what it was
+/// asked: the identifier ranker splits a snake_case identifier into words, so
+/// the intent reaches it as one.
+struct ForQuery {
+    query: &'static str,
+    ranking: Vec<(SymbolId, f64)>,
+    asked: Mutex<Vec<String>>,
+}
 
-impl Relevance for PerTerm {
-    fn rank(&self, term: &str, max: usize) -> Vec<Ranked> {
-        self.0
-            .get(term)
-            .into_iter()
-            .flatten()
+impl Relevance for ForQuery {
+    fn rank(&self, query: &str, max: usize) -> Vec<Ranked> {
+        self.asked.lock().unwrap().push(query.to_string());
+        if query != self.query {
+            return Vec::new();
+        }
+        self.ranking
+            .iter()
             .take(max)
             .map(|(id, score)| Ranked {
                 id: id.clone(),
@@ -479,17 +486,18 @@ fn the_intent_ranking_contributes_name_relevance_candidates() {
 }
 
 #[test]
-fn a_phrase_intent_is_ranked_term_by_term_and_the_scores_add() {
+fn a_phrase_intent_reaches_the_ranker_as_one_identifier_and_keeps_its_order() {
     let f = fixture();
     let (run, a, b) = (
         f.ids["run"].clone(),
         f.ids["a_parse"].clone(),
         f.ids["b_parse"].clone(),
     );
-    let ranking = PerTerm(HashMap::from([
-        ("parse", vec![(a.clone(), 2.0), (b.clone(), 1.0)]),
-        ("run", vec![(run.clone(), 1.5), (a.clone(), 0.5)]),
-    ]));
+    let ranking = ForQuery {
+        query: "parse_then_run",
+        ranking: vec![(run.clone(), 1.5), (b.clone(), 1.0), (a.clone(), 2.0)],
+        asked: Mutex::new(Vec::new()),
+    };
     let selection = select(
         &f.snapshot.graph,
         &ranking,
@@ -500,16 +508,37 @@ fn a_phrase_intent_is_ranked_term_by_term_and_the_scores_add() {
         },
     );
 
+    assert_eq!(*ranking.asked.lock().unwrap(), vec!["parse_then_run"]);
     let order: Vec<&SymbolId> = selection.candidates.iter().map(|c| &c.id).collect();
-    assert_eq!(order, vec![&a, &run, &b], "2.5, 1.5, 1.0");
-    assert_eq!(selection.candidates[0].score, 2.5);
+    assert_eq!(order, vec![&a, &run, &b], "best score first");
     assert!(
         selection
             .candidates
             .iter()
-            .all(|c| c.reason.code() == "exact_name"),
-        "each one is named exactly by one of the terms"
+            .all(|c| c.reason.code() == "name_relevance"),
+        "no name is the whole phrase"
     );
+}
+
+#[test]
+fn a_symbol_named_like_the_phrase_is_an_exact_match_in_snake_or_camel_case() {
+    let f = fixture();
+    let run = f.ids["run"].clone();
+    let ranking = ForQuery {
+        query: "run",
+        ranking: vec![(run.clone(), 9.0)],
+        asked: Mutex::new(Vec::new()),
+    };
+    let selection = select(
+        &f.snapshot.graph,
+        &ranking,
+        &SelectionRequest {
+            anchors: vec![],
+            intent: Some("  Run  ".to_string()),
+            hot_paths: 0,
+        },
+    );
+    assert_eq!(selection.candidates[0].reason.code(), "exact_name");
 }
 
 #[test]

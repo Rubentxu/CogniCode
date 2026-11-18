@@ -201,39 +201,43 @@ fn intent_terms(intent: &str) -> Vec<String> {
 
 /// The candidates the intent names, best first.
 ///
-/// Each term is ranked on its own and a symbol's scores add up over the
-/// terms it matches; ties break on the id, so the order is deterministic.
-/// A symbol whose name is one of the terms is an exact match.
+/// The ranker splits an identifier into its words and adds up what each word
+/// is worth, so the terms of the intent go to it as one snake_case identifier:
+/// a symbol that names several of the terms outranks one that names a single
+/// common term. Ranking each term on its own would let a symbol called just
+/// like one term (a field named `cache`) bury the one the phrase describes
+/// (`FileFactsCache`). A symbol whose name is the intent, spelled in snake or
+/// camel case, is an exact match. Ties break on the id, so the order is
+/// deterministic.
 fn rank_intent(graph: &CallGraph, relevance: &dyn Relevance, intent: &str) -> Vec<Candidate> {
     let terms = intent_terms(intent);
-    let mut scores: Vec<(SymbolId, f64)> = Vec::new();
-    for term in &terms {
-        for ranked in relevance.rank(term, INTENT_CANDIDATES) {
-            match scores.iter_mut().find(|(id, _)| *id == ranked.id) {
-                Some((_, total)) => *total += ranked.score,
-                None => scores.push((ranked.id, ranked.score)),
-            }
-        }
+    if terms.is_empty() {
+        return Vec::new();
     }
-    scores.sort_by(|(a_id, a), (b_id, b)| {
-        b.total_cmp(a)
-            .then_with(|| a_id.as_str().cmp(b_id.as_str()))
+    let snake = terms.join("_");
+    let camel = terms.concat();
+    let mut ranked = relevance.rank(&snake, INTENT_CANDIDATES);
+    ranked.sort_by(|a, b| {
+        b.score
+            .total_cmp(&a.score)
+            .then_with(|| a.id.as_str().cmp(b.id.as_str()))
     });
-    scores.truncate(INTENT_CANDIDATES);
-    scores
+    ranked.truncate(INTENT_CANDIDATES);
+    ranked
         .into_iter()
-        .map(|(id, score)| {
-            let exact = graph
-                .get_symbol(&id)
-                .is_some_and(|symbol| terms.contains(&symbol.name().to_lowercase()));
+        .map(|ranked| {
+            let exact = graph.get_symbol(&ranked.id).is_some_and(|symbol| {
+                let name = symbol.name().to_lowercase();
+                name == snake || name == camel
+            });
             Candidate {
-                id,
+                id: ranked.id,
                 reason: if exact {
                     Reason::ExactName
                 } else {
                     Reason::NameRelevance
                 },
-                score,
+                score: ranked.score,
             }
         })
         .collect()
