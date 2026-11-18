@@ -122,6 +122,12 @@ fn arguments_of(goal: &GoalSpec) -> Vec<String> {
         arguments.push("--file".to_string());
         arguments.push("lib.rs".to_string());
     }
+    if goal.name == "pack" {
+        // `pack` needs a request, and no single argument is required by the
+        // schema alone; the fixture asks for the symbols named like its own.
+        arguments.push("--intent".to_string());
+        arguments.push("alpha".to_string());
+    }
     for name in goals::required_names(&schema) {
         let value = match name {
             "symbol" => "alpha",

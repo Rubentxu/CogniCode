@@ -222,7 +222,7 @@ impl Default for SymbolCodeService {
 }
 
 /// Finds a tree-sitter node at the given position
-fn find_node_at_position(
+pub(super) fn find_node_at_position(
     root: tree_sitter::Node,
     line: u32,
     column: u32,
@@ -302,7 +302,10 @@ const INTERESTING_NODE_KINDS: &[&str] = &[
 
 /// Walks ancestors from the given node to find the first "interesting" enclosing symbol.
 /// If no interesting ancestor is found, returns the original node (backward compatible).
-fn find_enclosing_symbol(node: tree_sitter::Node, language: Language) -> tree_sitter::Node {
+pub(super) fn find_enclosing_symbol(
+    node: tree_sitter::Node,
+    language: Language,
+) -> tree_sitter::Node {
     let mut current = node;
     let mut best_interesting = None;
 
@@ -328,7 +331,7 @@ fn find_enclosing_symbol(node: tree_sitter::Node, language: Language) -> tree_si
 /// Los lenguajes que NO declaran conjuntos conservan la lista
 /// histórica, que es lo único que conoce sus nombres de nodo: cambiar
 /// lo que publican es de la unidad que los migra, no de esta.
-fn is_symbol_node(node: tree_sitter::Node, language: Language) -> bool {
+pub(super) fn is_symbol_node(node: tree_sitter::Node, language: Language) -> bool {
     let kind = node.kind();
 
     if language.reads_declared_symbol_sets() {

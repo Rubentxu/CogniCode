@@ -29,6 +29,7 @@ pub mod analysis_basis;
 pub mod consumer_analysis;
 // M7.4 Behavior Runtime adapters — Clock port + SystemClock (application, not domain).
 pub mod commands;
+pub mod context_pack;
 pub mod dto;
 pub mod error;
 #[cfg(feature = "evidence-cli-ladybug")]

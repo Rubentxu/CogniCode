@@ -274,6 +274,13 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "n/a",
         },
 
+        // El paquete lee la instantánea del grafo y la fuente con los mismos
+        // lectores tree-sitter que `inspect`.
+        "pack" => ToolCapabilities {
+            langs: tree_sitter_langs(),
+            precision: "AST",
+        },
+
         "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
             ToolCapabilities {
                 langs: tree_sitter_langs(),
@@ -396,6 +403,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "security",
         "preflight",
         "dependencies",
+        "pack",
     ]
 }
 

@@ -254,6 +254,115 @@ fn a_cut_answer_offers_the_next_page() {
     assert!(handle.starts_with("page:"), "{handle}");
 }
 
+/// A `pack` that did not fit offers the next page of the same request.
+///
+/// The link keeps the symbols, the intent and the budget of the call, so the
+/// page is asked for exactly as the first one was.
+#[test]
+fn a_cut_pack_offers_the_next_page_of_the_same_request() {
+    let result = json!({
+        "status": "partial",
+        "summary": "1 of 3 symbols",
+        "truncated": true,
+        "continuation_token": "v1.0123456789abcdef.1"
+    });
+    let mut args = Map::new();
+    args.insert("intent".into(), json!("parse"));
+    args.insert("max_tokens".into(), json!(600));
+    let envelope = envelope_for("pack", &args, &result, &context());
+
+    let link = link_with(&envelope, "continue");
+    assert_eq!(link.tool, "pack");
+    assert_eq!(link.required_args["intent"], json!("parse"));
+    assert_eq!(link.required_args["max_tokens"], json!(600));
+    assert_eq!(
+        link.required_args["continuation_token"],
+        json!("v1.0123456789abcdef.1")
+    );
+    assert_eq!(envelope.state, "partial");
+    assert!(
+        envelope.budget.page.is_some(),
+        "the page is a handle in the budget"
+    );
+}
+
+/// A `pack` with no page to offer does not mint one.
+#[test]
+fn a_pack_without_a_token_offers_no_page() {
+    let result = json!({"status": "partial", "summary": "all", "truncated": false});
+    let envelope = envelope_for("pack", &Map::new(), &result, &context());
+
+    assert!(envelope.budget.page.is_none());
+    assert!(envelope.links.iter().all(|link| link.rel != "continue"));
+}
+
+/// A homonym in a `pack` offers the call that resolves it: the same tool
+/// with one symbol id.
+#[test]
+fn an_ambiguous_pack_offers_the_call_with_an_id() {
+    let result = json!({
+        "status": "partial",
+        "summary": "1 name is ambiguous",
+        "ambiguities": [{"query": "parse", "candidates": ["src/a.rs:parse:0", "src/b.rs:parse:0"]}]
+    });
+    let envelope = envelope_for("pack", &Map::new(), &result, &context());
+
+    let link = link_with(&envelope, "resolve-ambiguity");
+    assert_eq!(link.tool, "pack");
+    assert_eq!(link.required_args["symbols"], json!(["src/a.rs:parse:0"]));
+    assert!(link.reason.contains("`parse`") && link.reason.contains("2 symbols"));
+}
+
+/// A `pack` that left out a symbol whose file changed offers the rebuild.
+#[test]
+fn a_pack_with_a_stale_omission_offers_the_reindex() {
+    let result = json!({
+        "status": "partial",
+        "summary": "1 symbol omitted",
+        "omissions": [
+            {"id": "src/a.rs:parse:0", "reason": "source_changed"},
+            {"id": "src/b.rs:parse:0", "reason": "budget"}
+        ]
+    });
+    let envelope = envelope_for("pack", &Map::new(), &result, &context());
+
+    let link = link_with(&envelope, "reindex");
+    assert_eq!(link.tool, "build_graph");
+    assert!(
+        link.reason.starts_with("1 symbol left out"),
+        "{}",
+        link.reason
+    );
+
+    let only_budget = json!({
+        "status": "partial", "summary": "s",
+        "omissions": [{"id": "x", "reason": "budget"}]
+    });
+    let envelope = envelope_for("pack", &Map::new(), &only_budget, &context());
+    assert!(envelope.links.iter().all(|link| link.rel != "reindex"));
+}
+
+/// Una respuesta que lista una muestra declara el total aparte: el sobre
+/// cuenta el total, no la muestra.
+#[test]
+fn a_sampled_list_is_counted_by_its_declared_total() {
+    let result = json!({
+        "status": "partial", "summary": "s",
+        "coverage": {
+            "status": "partial",
+            "skipped_files": [], "skipped_files_total": 0,
+            "pending_references": [{"target": "x"}], "pending_references_total": 4200,
+            "rejected_relations": [], "rejected_relations_total": 3
+        }
+    });
+    let envelope = envelope_for("pack", &Map::new(), &result, &context());
+    let coverage = envelope.basis.coverage.expect("the answer declares holes");
+
+    assert_eq!(coverage.pending_references, 4200);
+    assert_eq!(coverage.rejected_relationships, 3);
+    assert_eq!(coverage.skipped_files, 0);
+}
+
 /// El fan-in alto: un símbolo del que dependen muchos.
 #[test]
 fn a_hot_symbol_offers_its_callers() {

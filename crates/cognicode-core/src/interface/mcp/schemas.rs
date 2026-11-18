@@ -2436,7 +2436,9 @@ pub struct SuggestContextOutput {
     pub items: Vec<SuggestContextItem>,
     /// Total number of items returned
     pub total: usize,
-    /// Source of results (e.g., "fts5_hotpath", "fts5_only")
+    /// Where the items came from: `hotpath_only` when they are the most
+    /// connected symbols of the graph, `hotpath_empty` when no symbol is
+    /// called by at least two others.
     pub source: String,
     /// Metadata about the generation
     pub metadata: AnalysisMetadata,

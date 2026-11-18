@@ -25,6 +25,7 @@
 //! suggest_context, reparse_on_edit.
 
 use super::{published_line, semantic_index::ensure_semantic_indexed, *};
+use crate::application::context_pack::{NoRelevance, SelectionRequest, select};
 
 // The incremental reindex, and what it costs. It lives here because it
 // is the body of the `reparse_on_edit` tool, and the file it lives in
@@ -1746,72 +1747,42 @@ pub async fn handle_suggest_context(
 
     let graph = ctx.analysis_service.get_project_graph();
 
-    // Get hot-path symbols as seed tokens for FTS5 search
-    let hot_paths = get_hot_paths_from_graph(&graph, limit);
+    // The zero-query suggestion is a selection like the pack's: the same
+    // service picks the most connected symbols and says why. No search index
+    // is asked, so no answer is labelled as coming from one.
+    let selection = select(
+        &graph,
+        &NoRelevance,
+        &SelectionRequest {
+            hot_paths: limit,
+            ..SelectionRequest::default()
+        },
+    );
 
-    let mut items = Vec::new();
-    let source;
-
-    // Try FTS5 search with hot-path symbols as query tokens
-    // Fall back to hot-path only if FTS5 returns nothing
-    if hot_paths.is_empty() {
-        // No hot paths - return empty result with graceful message
-        source = "hotpath_empty".to_string();
+    let items: Vec<SuggestContextItem> = selection
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            let symbol = graph.get_symbol(&candidate.id)?;
+            Some(SuggestContextItem {
+                name: symbol.name().to_string(),
+                kind: format!("{:?}", symbol.kind()).to_lowercase(),
+                file: symbol.location().file().to_string(),
+                line: published_line(symbol.location().line()),
+                score: candidate.score as f32,
+                context: format!(
+                    "Hot path ({})",
+                    candidate.reason.detail().unwrap_or_default()
+                ),
+            })
+        })
+        .collect();
+    let source = if items.is_empty() {
+        "hotpath_empty"
     } else {
-        // Build FTS5 query from hot-path symbol names
-        let fts5_query = hot_paths
-            .iter()
-            .map(|hp| hp.symbol_name.clone())
-            .collect::<Vec<_>>()
-            .join(" OR ");
-
-        // Query semantic search (FTS5-backed)
-        let search_results =
-            ctx.semantic_search
-                .search(crate::domain::value_objects::SymbolSearchQuery {
-                    query: fts5_query,
-                    kinds: vec![],
-                    max_results: limit,
-                });
-
-        if search_results.is_empty() {
-            // No FTS5 results - use hot paths directly
-            source = "hotpath_only".to_string();
-            for hp in hot_paths.iter().take(limit) {
-                items.push(SuggestContextItem {
-                    name: hp.symbol_name.clone(),
-                    kind: "function".to_string(),
-                    file: hp.file.clone(),
-                    line: published_line(hp.line),
-                    score: calculate_hotness_score(hp.fan_in, hp.fan_out),
-                    context: format!("Hot path (fan_in={}, fan_out={})", hp.fan_in, hp.fan_out),
-                });
-            }
-        } else {
-            // FTS5 results available - merge with hot-path ranking
-            source = "fts5_hotpath".to_string();
-            let max_fan_in = hot_paths.iter().map(|hp| hp.fan_in).max().unwrap_or(1) as f32;
-
-            for result in search_results.iter().take(limit) {
-                let symbol_id = SymbolId::new(result.symbol.fully_qualified_name());
-                let fan_in = graph.callers(&symbol_id).len() as f32;
-                let hotness_score = if max_fan_in > 0.0 {
-                    (fan_in / max_fan_in).min(1.0)
-                } else {
-                    0.5
-                };
-
-                items.push(SuggestContextItem {
-                    name: result.symbol.name().to_string(),
-                    kind: format!("{:?}", result.symbol.kind()).to_lowercase(),
-                    file: result.symbol.location().file().to_string(),
-                    line: published_line(result.symbol.location().line()),
-                    score: (result.score * 0.6 + hotness_score * 0.4).min(1.0),
-                    context: format!("Score: {:.2}, fan_in: {}", result.score, fan_in),
-                });
-            }
-        }
+        "hotpath_only"
     }
+    .to_string();
 
     let total = items.len();
     let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -2316,19 +2287,6 @@ async fn persist_findings(
     _findings: &[DriftFinding],
 ) -> usize {
     0
-}
-
-/// Calculate a hotness score from fan-in and fan-out
-fn calculate_hotness_score(fan_in: usize, fan_out: usize) -> f32 {
-    use std::cmp::Ordering;
-
-    // Higher fan_in = more important (called by many)
-    // Lower fan_out = less complex (doesn't call many others)
-    match fan_in.cmp(&fan_out) {
-        Ordering::Greater => (fan_in as f32 / (fan_in + fan_out) as f32).min(1.0),
-        Ordering::Equal if fan_in == 0 => 0.5,
-        _ => 0.3,
-    }
 }
 
 // ============================================================================
@@ -3474,6 +3432,73 @@ fn another() {}
             "total must count the items actually returned"
         );
         assert!(!output.source.is_empty());
+    }
+
+    #[tokio::test]
+    async fn suggest_context_suggests_hot_paths_and_never_claims_a_search_index() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &file_path,
+            "fn main() { helper(); also_calls_helper(); }\n\
+             fn also_calls_helper() { helper(); }\n\
+             fn helper() { another(); }\n\
+             fn another() {}\n",
+        )
+        .unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
+        let _ = handle_build_graph(&ctx, BuildGraphInput { directory: None }).await;
+
+        let output = handle_suggest_context(
+            &ctx,
+            SuggestContextInput {
+                limit: Some(10),
+                project_path: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(output.source, "hotpath_only");
+        assert!(!output.source.contains("fts5"), "no search index is asked");
+        let names: Vec<&str> = output.items.iter().map(|i| i.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["helper"],
+            "only helper is called by two symbols; got {names:?}"
+        );
+        assert_eq!(output.items[0].kind, "function");
+        assert_eq!(output.items[0].context, "Hot path (fan_in=2, fan_out=1)");
+        assert!(output.items[0].score > 0.0 && output.items[0].score <= 1.0);
+    }
+
+    #[tokio::test]
+    async fn suggest_context_says_so_when_no_symbol_is_a_hot_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let file_path = temp.path().join("src/main.rs");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "fn main() { helper(); }\nfn helper() {}\n").unwrap();
+        let ctx = HandlerContext::builder()
+            .with_working_dir(temp.path().to_path_buf())
+            .build();
+        let _ = handle_build_graph(&ctx, BuildGraphInput { directory: None }).await;
+
+        let output = handle_suggest_context(
+            &ctx,
+            SuggestContextInput {
+                limit: Some(10),
+                project_path: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(output.source, "hotpath_empty");
+        assert!(output.items.is_empty());
+        assert_eq!(output.total, 0);
     }
 
     #[tokio::test]
