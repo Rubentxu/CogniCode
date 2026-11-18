@@ -499,8 +499,9 @@ safe rename refactoring, complexity audits, execution path tracing**, and more.
 
 ## Versioning
 
-- **Current release:** `v0.107.0` — cut from this tree as `v0.107.0`, prepared
-  and not yet published. A minor release: it adds the `pack` goal (adaptive
+- **Current release:** `v0.107.0` — cut from this tree as `v0.107.0`; the tag
+  carries it and the release has not been published. A minor release: it adds
+  the `pack` goal (adaptive
   context selection by purpose and detail level, the exact lines of a change
   with their consumers, contracts and tests, and navigation between levels of
   knowledge), the offline `dependencies` and `advisories` goals (Cargo
