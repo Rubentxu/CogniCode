@@ -113,28 +113,50 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     assert_eq!(answer["changes"][0]["kind"], "modified");
     // The impact is computed from produced revision facts. The server names a
     // cache, so the detector run over the base revision wrote its read-set
-    // and reuse is a real verdict: the function the detector read was
-    // renamed, so that work is affected and must run again.
+    // and reuse is a real verdict, one per detector that writes a read-set:
+    //
+    // - `structure.function_definition` read the function that was renamed,
+    //   so its work is affected and must run again;
+    // - `structure.type_definition` and `infrastructure.unprotected_s3_bucket`
+    //   read nothing the rename removed, but the planner is conservative about
+    //   a fact added since the base: no prior read-set contained it, so it
+    //   cannot prove the detector would not have read it, and both are
+    //   unknown.
     assert_eq!(answer["impact_status"], "evaluated");
     assert_eq!(
         answer["work_reuse_status"], "partial",
-        "the type detector cannot prove the added definition unread: {}",
+        "the detectors cannot prove the added definition unread: {}",
         answer["work_reuse_reason"]
     );
     assert_eq!(answer["work_reuse"]["affected"], 1);
-    assert_eq!(answer["work_reuse"]["unknown"], 1);
+    assert_eq!(answer["work_reuse"]["unknown"], 2);
     assert_eq!(answer["work_reuse"]["unaffected"], 0);
+    let verdicts: Vec<(&str, &str)> = answer["work_reuse"]["works"]
+        .as_array()
+        .expect("one verdict per detector that wrote a read-set")
+        .iter()
+        .map(|work| {
+            (
+                work["work"].as_str().expect("work"),
+                work["disposition"].as_str().expect("disposition"),
+            )
+        })
+        .collect();
     assert_eq!(
-        answer["work_reuse"]["works"].as_array().map(Vec::len),
-        Some(2),
-        "one verdict per detector that wrote a read-set"
+        verdicts,
+        [
+            ("infrastructure.unprotected_s3_bucket", "unknown"),
+            ("structure.function_definition", "affected"),
+            ("structure.type_definition", "unknown"),
+        ],
+        "{answer}"
     );
     // The renamed function the detector read forces a re-run on the head, and
     // the answer says so instead of presenting the base findings as current.
     let heads = answer["head_findings"]
         .as_array()
         .expect("one per detector");
-    assert_eq!(heads.len(), 2, "{answer}");
+    assert_eq!(heads.len(), 3, "{answer}");
     assert_eq!(heads[0]["detector"], "structure.function_definition");
     assert_eq!(heads[0]["reuse"], "rerun", "{answer}");
     assert_eq!(heads[0]["findings"][0]["file"], "src.rs");
@@ -142,6 +164,11 @@ async fn a_comparison_answers_with_its_evidence_and_nothing_else_on_stdout() {
     assert_ne!(
         heads[1]["reuse"], "reused",
         "a definition was added that the type detector could not have read: {answer}"
+    );
+    assert_eq!(heads[2]["detector"], "infrastructure.unprotected_s3_bucket");
+    assert_ne!(
+        heads[2]["reuse"], "reused",
+        "a fact was added that the bucket detector could not have read: {answer}"
     );
     // What the answer says it persisted is on disk, in the cache the server
     // was given and nowhere else.

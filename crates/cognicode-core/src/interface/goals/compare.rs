@@ -824,6 +824,7 @@ mod tests {
 
     const FUNCTION_DETECTOR: &str = "structure.function_definition";
     const TYPE_DETECTOR: &str = "structure.type_definition";
+    const BUCKET_DETECTOR: &str = "infrastructure.unprotected_s3_bucket";
 
     fn head_of(answer: &GoalCompare, detector: &str) -> CompareHeadFindings {
         answer
@@ -852,7 +853,7 @@ mod tests {
             answer.work_reuse_reason
         );
         let reuse = answer.work_reuse.expect("a verdict per detector");
-        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 2, 0));
+        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 3, 0));
         assert!(
             reuse
                 .works
@@ -877,8 +878,8 @@ mod tests {
         let reuse = answer.work_reuse.expect("a verdict per detector");
         assert_eq!(
             (reuse.unaffected, reuse.unknown),
-            (0, 2),
-            "an aggregate read over all definitions cannot prove the new one unread"
+            (0, 3),
+            "a fact added since the base cannot be proven unread by any prior read-set"
         );
     }
 
@@ -1008,7 +1009,10 @@ mod tests {
             .iter()
             .map(|head| head.detector.clone())
             .collect();
-        assert_eq!(detectors, [FUNCTION_DETECTOR, TYPE_DETECTOR]);
+        assert_eq!(
+            detectors,
+            [FUNCTION_DETECTOR, TYPE_DETECTOR, BUCKET_DETECTOR]
+        );
         let types = head_of(&answer, TYPE_DETECTOR);
         assert_eq!(types.reuse, "reused", "{}", types.reason);
         assert!(types.findings.is_empty(), "the repository defines no type");
@@ -1064,7 +1068,7 @@ mod tests {
 
         let answer = compare(root, &base, "HEAD").expect("compare");
 
-        for detector in [FUNCTION_DETECTOR, TYPE_DETECTOR] {
+        for detector in [FUNCTION_DETECTOR, TYPE_DETECTOR, BUCKET_DETECTOR] {
             let head = head_of(&answer, detector);
             assert_eq!(head.reuse, "rerun", "{detector}");
             assert!(head.reason.contains("no prior read-set"), "{}", head.reason);

@@ -577,7 +577,7 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     let uncached_heads = uncached_answer["head_findings"]
         .as_array()
         .expect("one entry per detector that writes a read-set");
-    assert_eq!(uncached_heads.len(), 2);
+    assert_eq!(uncached_heads.len(), 3);
     for head in uncached_heads {
         assert_eq!(head["reuse"], "rerun", "{head}");
         assert!(
@@ -596,16 +596,17 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
     // With a cache, the production detector run wrote the base read-set and
     // the renamed function it read makes that work affected.
     // The renamed function is affected for the function detector and the new
-    // definition cannot be proven unread by the type detector, so the verdict
-    // is partial: not every prior execution has a proven answer.
+    // definition cannot be proven unread by the type and the bucket detectors,
+    // so the verdict is partial: not every prior execution has a proven
+    // answer.
     assert_eq!(answer["work_reuse_status"], "partial");
     assert_eq!(answer["work_reuse"]["affected"], 1);
-    assert_eq!(answer["work_reuse"]["unknown"], 1);
+    assert_eq!(answer["work_reuse"]["unknown"], 2);
     // The affected detector ran again on the candidate: its one finding is
     // the renamed function, backed by the candidate revision's facts, and the
     // same answer reached both surfaces. The type detector read no change but
     // the rename adds a definition it could not have read, so it runs again
-    // too, saying that reuse is not proven.
+    // too, saying that reuse is not proven, and so does the bucket detector.
     let heads = answer["head_findings"]
         .as_array()
         .expect("one per detector");
@@ -615,7 +616,11 @@ async fn compare_is_the_same_cli_and_mcp_contract_and_states_what_it_evaluated()
         .collect();
     assert_eq!(
         detectors,
-        ["structure.function_definition", "structure.type_definition"]
+        [
+            "structure.function_definition",
+            "structure.type_definition",
+            "infrastructure.unprotected_s3_bucket"
+        ]
     );
     let functions = &heads[0];
     assert_eq!(functions["reuse"], "rerun");
