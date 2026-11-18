@@ -56,6 +56,14 @@ fn repository() -> tempfile::TempDir {
     let directory = tempfile::tempdir().expect("workspace");
     let repo = directory.path();
     git(repo, &["init", "-q", "-b", "main"]);
+    // The governance of the machine judges every commit by the remotes of the
+    // repository that receives it, and a repository with no remote is
+    // unclassified: its commit is refused, the fixture never gets the history
+    // the test measures, and the test fails before it says anything about the
+    // product. A fixture is a repository like any other, so it declares a
+    // local remote — the one the machine classifies as a test repository. The
+    // remote is never contacted: it exists to classify the repository.
+    git(repo, &["remote", "add", "origin", "localhost:origin"]);
     write(repo, "src/lib.rs", LIB);
     write(repo, "src/other.rs", OTHER);
     git(repo, &["add", "-A"]);
