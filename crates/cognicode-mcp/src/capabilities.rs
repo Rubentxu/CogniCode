@@ -274,6 +274,13 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "n/a",
         },
 
+        // El paquete lee la instantánea del grafo y la fuente con los mismos
+        // lectores tree-sitter que `inspect`.
+        "pack" => ToolCapabilities {
+            langs: tree_sitter_langs(),
+            precision: "AST",
+        },
+
         // The advisory correlation reads the lockfile bytes and a feed file; it
         // does not use the language registry grammars either.
         "advisories" => ToolCapabilities {
@@ -403,6 +410,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "security",
         "preflight",
         "dependencies",
+        "pack",
         "advisories",
     ]
 }

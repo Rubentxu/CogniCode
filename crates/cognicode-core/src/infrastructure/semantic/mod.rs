@@ -5,10 +5,12 @@
 //! - Symbol code retrieval with caching
 //! - Semantic search with filtering
 
+pub mod declaration_span;
 pub mod outline;
 pub mod semantic_search;
 pub mod symbol_code;
 
+pub use declaration_span::TreeSitterDeclarations;
 pub use outline::{OutlineBuilder, OutlineNode, build_outline};
 pub use semantic_search::{MatchType, SearchIndex, SearchResult, SemanticSearchService};
 pub use symbol_code::{CachedSymbolCode, SymbolCodeCache, SymbolCodeKey, SymbolCodeService};

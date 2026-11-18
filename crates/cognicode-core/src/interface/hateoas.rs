@@ -291,11 +291,23 @@ impl Holes {
 }
 
 /// El número de elementos de un campo, si la respuesta lo declara.
+///
+/// Una respuesta que lista solo una muestra de un campo declara cuántos hay
+/// en total en `<campo>_total`: ese número manda sobre la longitud de la
+/// muestra.
 fn count_of(result: &Value, names: &[&str]) -> Option<usize> {
-    names
-        .iter()
-        .find_map(|name| result.get(*name).and_then(Value::as_array))
-        .map(|items| items.len())
+    names.iter().find_map(|name| {
+        result
+            .get(format!("{name}_total"))
+            .and_then(Value::as_u64)
+            .map(|total| total as usize)
+            .or_else(|| {
+                result
+                    .get(*name)
+                    .and_then(Value::as_array)
+                    .map(|items| items.len())
+            })
+    })
 }
 
 /// La palabra, en singular o en plural, según lo que se cuenta.
@@ -380,7 +392,9 @@ fn links_for(
 ) -> Vec<Link> {
     [
         ambiguity_link(result, ctx),
+        pack_ambiguity_link(tool, result),
         continue_link(tool, args, result, ctx),
+        pack_reindex_link(tool, result, ctx),
         callers_link(result, ctx),
         reindex_link(result, ctx),
         risk_link(result, ctx),
@@ -444,6 +458,68 @@ fn ambiguity_link(result: &Value, ctx: &HandleContext) -> Option<Link> {
             plural(ambiguous.len(), "reference")
         ),
         Some(mint_handle(HandleKind::Sym, ctx, &json!(target))),
+    ))
+}
+
+/// The homonym of a `pack`: the answer names every symbol that declares the
+/// name the caller wrote, and asking again with one of those ids is what
+/// resolves it. The link carries the first id; the answer lists the rest.
+fn pack_ambiguity_link(tool: &str, result: &Value) -> Option<Link> {
+    if tool != "pack" {
+        return None;
+    }
+    let ambiguities = result.get("ambiguities")?.as_array()?;
+    let first = ambiguities.first()?;
+    let query = first.get("query")?.as_str()?;
+    let candidates = first.get("candidates")?.as_array()?;
+    let id = candidates.first()?.as_str()?;
+
+    let mut args = Map::new();
+    args.insert("symbols".into(), json!([id]));
+    Some(link(
+        "resolve-ambiguity",
+        "pack",
+        args,
+        format!(
+            "the name `{query}` is declared by {} symbols and was not resolved; ask for one id",
+            candidates.len()
+        ),
+        None,
+    ))
+}
+
+/// A `pack` that left out a symbol because its file changed or could not be
+/// read since the snapshot: the rebuild is what brings the snapshot and the
+/// disk back together.
+fn pack_reindex_link(tool: &str, result: &Value, ctx: &HandleContext) -> Option<Link> {
+    if tool != "pack" {
+        return None;
+    }
+    let stale = result
+        .get("omissions")?
+        .as_array()?
+        .iter()
+        .filter(|omission| {
+            matches!(
+                omission.get("reason").and_then(Value::as_str),
+                Some("source_changed" | "unreadable")
+            )
+        })
+        .count();
+    if stale == 0 {
+        return None;
+    }
+    let mut args = Map::new();
+    args.insert("directory".into(), json!(ctx.workspace));
+    Some(link(
+        "reindex",
+        "build_graph",
+        args,
+        format!(
+            "{stale} {} left out because the file changed or could not be read since the snapshot",
+            plural(stale, "symbol")
+        ),
+        None,
     ))
 }
 

@@ -518,6 +518,34 @@ pub const DEPENDENCIES: GoalSpec = GoalSpec {
     render: dependencies::render,
 };
 
+/// El goal `pack`: los símbolos que responden a una petición, con su evidencia.
+pub const PACK: GoalSpec = GoalSpec {
+    name: "pack",
+    title: "Los símbolos que responden a una petición, con evidencia",
+    description: "Devuelve un paquete de contexto de símbolos: para cada uno su identidad \
+única, el rango de fuente, el digest del fichero, el motivo por el que se eligió y la \
+instantánea sobre la que se calculó. Un nombre que varios símbolos declaran se reporta \
+como ambigüedad y no se resuelve; se pasa el id del símbolo. El presupuesto \
+(`--max-tokens`) acota el texto que se renderiza y se mide sobre ese mismo texto: con \
+un tokenizador configurado el recuento es exacto para él, y sin él es una cota \
+superior declarada, nunca exacta. El paquete dice qué entregó y qué dejó fuera, y no \
+afirma cobertura semántica: nadie la evalúa. Si no cabe todo, devuelve un \
+`continuation_token` para la página siguiente de la misma instantánea. Ejemplos: \
+`cognicode pack --symbols src/lib.rs:helper:10`, `cognicode pack --intent \"parse \
+config\" --max-tokens 800`.",
+    examples: &[
+        "cognicode pack --symbols src/lib.rs:helper:10",
+        "cognicode pack --intent \"parse config\" --max-tokens 800",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::pack",
+    requires_graph: true,
+    replaces: &[],
+    run: pack::run,
+    render: pack::render,
+};
+
 /// The `advisories` goal: the resolved Cargo packages of a revision correlated
 /// with a pinned OSV feed.
 pub const ADVISORIES: GoalSpec = GoalSpec {
@@ -538,7 +566,7 @@ pub const ADVISORIES: GoalSpec = GoalSpec {
 };
 
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 16] = [
+static REGISTRY: [GoalSpec; 17] = [
     STATUS,
     CONTEXT,
     FIND,
@@ -554,6 +582,7 @@ static REGISTRY: [GoalSpec; 16] = [
     SECURITY,
     PREFLIGHT,
     DEPENDENCIES,
+    PACK,
     ADVISORIES,
 ];
 
@@ -588,6 +617,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "security" => crate::interface::schema::schema_of::<security::SecurityInput>(),
         "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
         "dependencies" => crate::interface::schema::schema_of::<dependencies::DependenciesInput>(),
+        "pack" => crate::interface::schema::schema_of::<pack::PackInput>(),
         "advisories" => crate::interface::schema::schema_of::<advisories::AdvisoriesInput>(),
         _ => Map::new(),
     }
@@ -757,6 +787,20 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "The goal reports committed SCM changes, staged HEAD-to-index changes, and dirty/untracked working-tree paths. It does not read dirty file contents. Impact and prior-work reuse come from committed revision facts and stored execution read-sets: they are partial when facts are missing for some file and not_evaluated when there is nothing to compare. The head findings come from the three detectors that write read-sets, function definitions, type definitions and unprotected S3 buckets, one entry each. The other detectors do not write read-sets yet (the security pack, the dataflow detectors, the detectors imported from legacy rules, and the legacy quality rules), so their findings are not published here and their absence is not a clean result. Head findings are reused only when proven unaffected; with no cache or no read-set for the base they are always a rerun, and over a partial candidate they are a lower bound."
                 .to_string(),
         ]
+    } else if goal.name == "dependencies" {
+        vec![
+            "Reads tracked Cargo.toml and Cargo.lock bytes offline: resolved features and the kind of edges between non-member packages are not reported."
+                .to_string(),
+            "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
+                .to_string(),
+        ]
+    } else if goal.name == "pack" {
+        vec![
+            "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select."
+                .to_string(),
+            "The budget measures the rendered text, not the structured answer."
+                .to_string(),
+        ]
     } else {
         vec![
             "El goal se monta sobre el dueño que ya calcula esto: su respuesta no \
@@ -830,6 +874,7 @@ pub mod find;
 pub mod impact;
 pub mod inspect;
 pub mod overview;
+pub mod pack;
 pub mod preflight;
 pub mod recipe;
 mod revision_support;
