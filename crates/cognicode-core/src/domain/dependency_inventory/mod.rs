@@ -10,6 +10,7 @@
 //! * [`diff_inventories`] computes the change between two inventories.
 //! * [`dependents_of`] answers who reaches a package.
 //! * [`cargo_purl`] gives a resolved package its Package URL identity.
+//! * [`sbom`] reads an artifact SBOM and compares it with the inventory.
 
 pub mod cargo_lock;
 pub mod cargo_manifest;
@@ -19,6 +20,7 @@ pub mod dependents;
 pub mod model;
 pub mod purl;
 pub mod reconcile;
+pub mod sbom;
 pub mod source;
 pub mod units;
 pub mod version_req;

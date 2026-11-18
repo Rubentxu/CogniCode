@@ -1647,6 +1647,14 @@
     "inputSchema": {
       "description": "Arguments for the `dependencies` goal.",
       "properties": {
+        "artifact_digest": {
+          "default": null,
+          "description": "The SHA-256 of the artifact the SBOM is said to describe. The SBOM is\nbound to it only when the SBOM itself states that hash for its\nsubject. Requires `sbom`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "base_ref": {
           "default": null,
           "description": "A Git revision to compare against: adds, per workspace unit, the\npackages added, removed and updated in the lockfile.",
@@ -1675,6 +1683,30 @@
           "default": "HEAD",
           "description": "The Git revision to inventory. Defaults to `HEAD`.",
           "type": "string"
+        },
+        "sbom": {
+          "default": null,
+          "description": "A CycloneDX JSON SBOM of a built artifact: a file inside the\nworkspace, read and never fetched. The resolved inventory of the one\nworkspace unit in scope is compared with it and the distributed layer\nis filled as a claim of the SBOM producer, never as verified build\ntruth. Several units in scope are not compared: narrow with `path`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sbom_expected_digest": {
+          "default": null,
+          "description": "The SHA-256 digest the SBOM bytes are pinned to, as 64 lowercase hex\ndigits or `sha256:<hex>`. An SBOM whose bytes differ is not used.\nRequires `sbom`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sbom_member": {
+          "default": null,
+          "description": "The workspace member the SBOM describes, when its subject does not\nname one (for example a binary target named differently from its\npackage). Requires `sbom`.",
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "type": "object"

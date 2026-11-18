@@ -120,3 +120,98 @@ async fn a_lockfile_that_misses_a_declaration_is_reported_stale() {
         "declared_not_locked"
     );
 }
+
+fn sbom() -> String {
+    json!({
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "version": 1,
+        "metadata": {
+            "lifecycles": [{"phase": "build"}],
+            "component": {"type": "application", "bom-ref": "app", "name": "app", "version": "0.1.0"},
+        },
+        "components": [{
+            "type": "library",
+            "bom-ref": "serde",
+            "name": "serde",
+            "version": "1.0.1",
+            "purl": "pkg:cargo/serde@1.0.1",
+            "scope": "required",
+            "hashes": [{"alg": "SHA-256", "content": "a".repeat(64)}],
+        }],
+    })
+    .to_string()
+}
+
+#[tokio::test]
+async fn an_sbom_in_the_workspace_is_compared_over_the_wire() {
+    let repo = repository(MANIFEST);
+    std::fs::write(repo.path().join("app.cdx.json"), sbom()).expect("sbom");
+
+    let answer = call(repo.path(), json!({"sbom": "app.cdx.json"})).await;
+
+    let distributed = &answer["distributed"];
+    assert_eq!(distributed["status"], "usable");
+    assert_eq!(distributed["document"]["origin"], "app.cdx.json");
+    assert_eq!(distributed["units"][0]["evaluation"], "evaluated");
+    assert_eq!(
+        distributed["units"][0]["report"]["claim"]["stage"],
+        "artifact"
+    );
+    assert_eq!(
+        distributed["units"][0]["report"]["findings"],
+        json!([]),
+        "the SBOM and the lockfile agree"
+    );
+    let layers = answer["units"][0]["layers"].as_array().expect("layers");
+    assert!(
+        layers
+            .iter()
+            .any(|entry| entry["layer"] == "distributed" && entry["status"] == "partial")
+    );
+}
+
+#[tokio::test]
+async fn an_sbom_that_cannot_be_read_never_reads_as_complete_over_the_wire() {
+    let repo = repository(MANIFEST);
+
+    let answer = call(repo.path(), json!({"sbom": "missing.cdx.json"})).await;
+
+    assert_eq!(answer["distributed"]["status"], "unreadable");
+    let layers = answer["units"][0]["layers"].as_array().expect("layers");
+    assert!(
+        layers
+            .iter()
+            .any(|entry| entry["layer"] == "distributed" && entry["status"] == "not_collected")
+    );
+}
+
+#[tokio::test]
+async fn the_published_arguments_name_the_sbom_inputs() {
+    let scratch = tempfile::tempdir().expect("scratch");
+    let mut session = McpSession::spawn_with_flags(scratch.path(), &["--profile", "full"])
+        .await
+        .expect("spawn");
+    let response = session
+        .request("tools/list", json!({}))
+        .await
+        .expect("tools/list");
+    session.shutdown().await;
+    let tools = response["result"]["tools"].as_array().expect("tools");
+    let tool = tools
+        .iter()
+        .find(|tool| tool["name"] == "dependencies")
+        .expect("dependencies");
+    let properties = &tool["inputSchema"]["properties"];
+    for argument in [
+        "sbom",
+        "sbom_expected_digest",
+        "artifact_digest",
+        "sbom_member",
+    ] {
+        assert!(
+            properties.get(argument).is_some(),
+            "{argument}: {properties}"
+        );
+    }
+}

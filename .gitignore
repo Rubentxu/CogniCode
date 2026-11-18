@@ -245,6 +245,8 @@ sandbox/scripts/tests/__pycache__/
 # Output of the release lane (`scripts/ci/build-sboms-for-lane.sh`), not an accident:
 # a suite that leaves one behind fails `scripts/ci/tree_witness.py`.
 *.cdx.json
+# Hand-kept SBOM inputs for the dependency inventory tests, not release output.
+!sandbox/fixtures/dependency-inventory/*.cdx.json
 
 # Compat matrix binaries (Post-PRF L1.3): binarios legacy para tests
 # de compat (extraídos de releases publicados, no commiteados).
