@@ -5,8 +5,8 @@ import yaml from "@rollup/plugin-yaml";
 import path from "path";
 
 // WASM plugin — required for cognicode_graph_wasm module.
-// Add to package.json devDependencies: "vite-plugin-wasm": "^3.3.0"
-// Then run: wasm-pack build crates/cognicode-graph-wasm \
+// The dependency is declared in package.json; to build the module run:
+// wasm-pack build crates/cognicode-graph-wasm \
 //             --target web --out-dir ../../apps/explorer-ui/src/wasm
 import wasm from "vite-plugin-wasm";
 

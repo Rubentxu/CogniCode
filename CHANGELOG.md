@@ -103,6 +103,16 @@ goal nuevo y corregido. La suite incorpora instrumentos de medición (pack frent
 a lectura de ficheros, brechas de sintaxis de las gramáticas empaquetadas, coste
 de escenarios de gate, memoria máxima por pipeline en proceso aparte).
 
+**Explorer UI.** El worker de layout construye el runtime de ELK una sola vez por
+realm y lo comparte entre sus layouts, y serializa los layouts para que dos de
+ellos nunca se solapen sobre el mismo motor. El motor es inyectable, de modo que
+los tests lo doble fabrican y cuentan las construcciones sin pagar el arranque de
+GWT. La superficie por defecto del módulo es un único worker: `cancel()` y
+`onProgress()` llegan al layout en vuelo. Medido el 2026-11-18 sobre una cadena
+de 200 nodos: 262 ms con runtime nuevo (39 ms de constructor y 223 ms de layout)
+frente a 84 ms con runtime compartido. La dependencia `vite-plugin-wasm`, que
+`vite.config.ts` importaba sin declarar, deja de romper `npm run build`.
+
 **Límites conocidos.** `v0.106.0` tiene tag pero no se publicó, así que las
 novedades de ambos cortes llegan juntas cuando se publique. La selección
 adaptativa de `pack` se evaluó sobre un corpus fijo, no sobre repositorios

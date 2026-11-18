@@ -6,14 +6,22 @@
  * object with `layout`, `cancel`, and `onProgress` methods —
  * mirroring the comlink `expose` surface.
  *
- * Performance assertion: 200 nodes should layout under 500ms.
+ * The cost of a layout is measured outside this suite, in
+ * `scripts/measure-layout-cost.ts` (`npm run bench:layout`): a
+ * threshold on a clock is not a deterministic test, and the suite
+ * runs on machines whose speed nobody controls. What this suite
+ * certifies is the cause of that cost — the ELK runtime is built
+ * once and reused — with a double that counts the constructions.
+ *
  * Without animation, the result is a single `1.0` progress event.
  * With animation, progress is monotonic and ends at 1.0.
  */
 import { describe, expect, it } from "vitest";
 
-import { createLayoutWorker } from "./layout.worker";
+import layoutWorker, { createLayoutWorker } from "./layout.worker";
+import type { LayoutEngine } from "./layout.worker";
 import type { ElementsDefinition } from "cytoscape";
+import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 
 function smallElements(): ElementsDefinition {
   return {
@@ -144,11 +152,17 @@ describe("layout worker", () => {
     ).rejects.toThrow(/LayoutTooLarge/);
   });
 
-  it("200-node layered layout completes in <500ms", async () => {
+  it("200-node layered layout positions every node", async () => {
     const w = createLayoutWorker();
-    const t0 = performance.now();
-    await w.layout(chainElements(200), { algorithm: "layered", animate: false });
-    expect(performance.now() - t0).toBeLessThan(500);
+    const out = await w.layout(chainElements(200), {
+      algorithm: "layered",
+      animate: false,
+    });
+    expect(out.nodes).toHaveLength(200);
+    for (const n of out.nodes) {
+      const pos = (n as { position?: { x: number; y: number } }).position;
+      expect(pos).toBeDefined();
+    }
   });
 
   it("worker recovers after a cancel — next layout resolves", async () => {
@@ -203,5 +217,111 @@ describe("layout worker", () => {
     });
     expect(out.nodes).toEqual([]);
     expect(out.edges).toEqual([]);
+  });
+});
+
+/**
+ * A double of the ELK runtime: it counts the layouts it serves and
+ * records whether two of them overlapped.
+ */
+function fakeEngine() {
+  const engine = {
+    calls: 0,
+    maxConcurrent: 0,
+    concurrent: 0,
+    async layout(graph: ElkNode): Promise<ElkNode> {
+      engine.calls += 1;
+      engine.concurrent += 1;
+      engine.maxConcurrent = Math.max(engine.maxConcurrent, engine.concurrent);
+      // A tick of the event loop: a layout that yielded here would
+      // let a second one reach the engine at the same time.
+      await Promise.resolve();
+      engine.concurrent -= 1;
+      return {
+        ...graph,
+        children: (graph.children ?? []).map((child) => ({
+          ...child,
+          x: 0,
+          y: 0,
+        })),
+      };
+    },
+  };
+  return engine;
+}
+
+describe("layout worker — the engine is shared", () => {
+  it("builds the engine once and reuses it for every layout", async () => {
+    const engine = fakeEngine();
+    let built = 0;
+    const w = createLayoutWorker({
+      createEngine: () => {
+        built += 1;
+        return engine as LayoutEngine;
+      },
+    });
+
+    await w.layout(smallElements(), { algorithm: "layered", animate: false });
+    await w.layout(smallElements(), { algorithm: "layered", animate: false });
+    await w.layout(smallElements(), { algorithm: "layered", animate: false });
+
+    expect(built).toBe(1);
+    expect(engine.calls).toBe(3);
+  });
+
+  it("never runs two layouts on the engine at the same time", async () => {
+    const engine = fakeEngine();
+    const w = createLayoutWorker({
+      createEngine: () => engine as LayoutEngine,
+    });
+
+    await Promise.all([
+      w.layout(smallElements(), { algorithm: "layered", animate: false }),
+      w.layout(smallElements(), { algorithm: "layered", animate: false }),
+      w.layout(smallElements(), { algorithm: "layered", animate: false }),
+    ]);
+
+    expect(engine.calls).toBe(3);
+    expect(engine.maxConcurrent).toBe(1);
+  });
+
+  it("a layout cancelled before it starts does not reach the engine", async () => {
+    const engine = fakeEngine();
+    const w = createLayoutWorker({
+      createEngine: () => engine as LayoutEngine,
+    });
+
+    const pending = w.layout(smallElements(), {
+      algorithm: "layered",
+      animate: false,
+    });
+    w.cancel();
+
+    await expect(pending).rejects.toThrow(/LayoutCancelled/);
+    expect(engine.calls).toBe(0);
+  });
+});
+
+describe("the default export is one worker", () => {
+  it("cancel() cancels the layout the default export started", async () => {
+    const pending = layoutWorker.layout(chainElements(300), {
+      algorithm: "layered",
+    });
+    layoutWorker.cancel();
+
+    await expect(pending).rejects.toThrow(/LayoutCancelled/);
+  });
+
+  it("onProgress() receives the events of the layout the default export started", async () => {
+    const seen: number[] = [];
+    const unsub = layoutWorker.onProgress((p) => seen.push(p));
+
+    await layoutWorker.layout(smallElements(), {
+      algorithm: "layered",
+      animate: false,
+    });
+    unsub();
+
+    expect(seen).toEqual([1]);
   });
 });

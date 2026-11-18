@@ -352,6 +352,13 @@ explorer-lint:
 # Explorer: run all checks (lint + unit)
 explorer-check: explorer-lint explorer-test
 
+# Explorer: measure the cost of a layout. It lives outside the suite on
+# purpose — a threshold on a clock is not a deterministic test — and it
+# is asked for when the cost of a re-layout matters.
+explorer-layout-bench:
+    @echo "⏱️  Measuring the cost of an Explorer layout..."
+    cd {{ EXPLORER_UI_DIR }} && npm run bench:layout
+
 # Explorer: capture screenshots for docs
 explorer-screenshots:
     @echo "📸 Capturing Explorer screenshots..."
