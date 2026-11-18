@@ -162,6 +162,7 @@ tracing-subscriber.workspace = true
 
 # Regex
 regex.workspace = true
+regex-syntax.workspace = true
 
 # Base64
 base64.workspace = true
@@ -227,6 +228,10 @@ harness = false
 
 [[bench]]
 name = "symbol_search"
+harness = false
+
+[[bench]]
+name = "text_search"
 harness = false
 
 [[bench]]

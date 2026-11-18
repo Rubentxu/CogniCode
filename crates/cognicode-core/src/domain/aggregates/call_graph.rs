@@ -652,6 +652,31 @@ impl CallGraph {
             .unwrap_or_default()
     }
 
+    /// Returns the direct callers of a symbol with each relation's metadata.
+    ///
+    /// Parallel relations from one source to this symbol remain separate, in
+    /// the same canonical order as [`Self::callees_with_metadata`].
+    pub fn callers_with_metadata(
+        &self,
+        id: &SymbolId,
+    ) -> Vec<(SymbolId, DependencyType, Provenance, f64)> {
+        self.reverse_edges
+            .get(id)
+            .into_iter()
+            .flatten()
+            .flat_map(|source| {
+                self.edges
+                    .get(source)
+                    .into_iter()
+                    .flat_map(|outgoing| outgoing.iter())
+                    .filter(|((target, _), _)| target == id)
+                    .map(move |((_, kind), (provenance, confidence))| {
+                        (source.clone(), *kind, *provenance, *confidence)
+                    })
+            })
+            .collect()
+    }
+
     /// Returns the direct callees of a symbol
     ///
     /// The callees come out ordered by symbol id and then by dependency

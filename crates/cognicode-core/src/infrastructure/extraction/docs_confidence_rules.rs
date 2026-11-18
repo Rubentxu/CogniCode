@@ -122,8 +122,8 @@ pub fn score_link(
 /// The function does NOT consult the symbol table — it is a
 /// textual affinity check. The docs-source adapter uses the
 /// returned tier to set the edge's confidence + provenance; the
-/// actual symbol resolution happens later (via the graph_search
-/// FTS5 path or a future fuzzy matcher).
+/// actual symbol resolution happens later (via the graph search
+/// or a future fuzzy matcher).
 #[cfg(feature = "multimodal")]
 pub fn score_heading(heading: &str, context: &str) -> ConfidenceTier {
     let needle = normalise_link(heading);

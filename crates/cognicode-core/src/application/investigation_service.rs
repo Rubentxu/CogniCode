@@ -4,8 +4,14 @@
 // e30.1 clippy baseline reset: pre-existing lint debt (see fix/e30.1-clippy-baseline-reset)
 
 use time::OffsetDateTime;
+use tokio::sync::Mutex;
 
+use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::investigation::{Artifact, Evidence, Investigation};
+use crate::domain::investigation_candidates::{
+    CANDIDATE_ARTIFACT_ID_PREFIX, CANDIDATE_ARTIFACT_KIND, CandidateError, CandidateLedger,
+    CandidateScope, EvidencePolarity, InvestigationCandidate,
+};
 use crate::domain::investigation_store::{InvestigationStore, StoreError};
 
 /// Errors that can occur during investigation operations.
@@ -19,6 +25,10 @@ pub enum InvestigationError {
 
     #[error("Invalid status transition: {0}")]
     InvalidStatus(String),
+
+    /// A candidate operation was refused.
+    #[error("Candidate refused: {0}")]
+    Candidate(#[from] CandidateError),
 }
 
 /// Result type for investigation operations.
@@ -30,12 +40,20 @@ pub type InvestigationResult<T> = Result<T, InvestigationError>;
 /// and deleting investigations.
 pub struct InvestigationService<S: InvestigationStore> {
     store: S,
+    /// Serializes aggregate writes issued through this service so replacing an
+    /// investigation cannot drop a candidate ledger another operation saved.
+    /// Callers sharing a store must share this service instance: the store port
+    /// does not expose a cross-instance transaction.
+    investigation_writes: Mutex<()>,
 }
 
 impl<S: InvestigationStore> InvestigationService<S> {
     /// Create a new service with the given store.
     pub fn new(store: S) -> Self {
-        Self { store }
+        Self {
+            store,
+            investigation_writes: Mutex::new(()),
+        }
     }
 
     /// Create a new investigation with Draft status.
@@ -102,6 +120,7 @@ impl<S: InvestigationStore> InvestigationService<S> {
         investigation_id: &str,
         evidence: Evidence,
     ) -> InvestigationResult<()> {
+        let _write = self.investigation_writes.lock().await;
         self.store
             .add_evidence(investigation_id, evidence)
             .await
@@ -118,6 +137,10 @@ impl<S: InvestigationStore> InvestigationService<S> {
         investigation_id: &str,
         artifact: Artifact,
     ) -> InvestigationResult<Artifact> {
+        let _write = self.investigation_writes.lock().await;
+        if artifact.id.starts_with(CANDIDATE_ARTIFACT_ID_PREFIX) {
+            return Err(CandidateError::ArtifactConflict(artifact.id).into());
+        }
         self.store
             .add_artifact(investigation_id, artifact)
             .await
@@ -132,11 +155,29 @@ impl<S: InvestigationStore> InvestigationService<S> {
     /// - Completed → Archived
     pub async fn update_investigation(
         &self,
-        investigation: Investigation,
+        mut investigation: Investigation,
     ) -> InvestigationResult<()> {
+        let _write = self.investigation_writes.lock().await;
         // Validate status transition if status is changing.
         // The validation allows staying in the same status (idempotent).
         validate_status_transition(investigation.status)?;
+
+        if let Some(existing) = self
+            .store
+            .load(&investigation.id)
+            .await
+            .map_err(InvestigationError::from)?
+        {
+            let current_candidate_artifacts: Vec<Artifact> = existing
+                .artifacts
+                .into_iter()
+                .filter(|artifact| artifact.kind == CANDIDATE_ARTIFACT_KIND)
+                .collect();
+            investigation
+                .artifacts
+                .retain(|artifact| artifact.kind != CANDIDATE_ARTIFACT_KIND);
+            investigation.artifacts.extend(current_candidate_artifacts);
+        }
 
         self.store
             .save(&investigation)
@@ -146,8 +187,231 @@ impl<S: InvestigationStore> InvestigationService<S> {
         Ok(())
     }
 
+    // --- Reviewable candidates -------------------------------------------
+    //
+    // A candidate is an annotation of one session, never a fact. The ledger
+    // is kept in the investigation the store already persists, as one
+    // artifact per session, so it travels, is scoped and is deleted with the
+    // investigation and needs no store of its own.
+
+    /// Proposes a candidate for `subject`, anchoring the session's ledger at
+    /// `snapshot` the first time. A ledger that is at another snapshot refuses
+    /// the proposal until [`Self::apply_candidate_revision`] moves it.
+    ///
+    /// `subject` is the canonical symbol identity resolved from a verified
+    /// workspace/snapshot-bound handle; `reason` is short data and is never interpreted.
+    pub async fn propose_candidate(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        snapshot: &str,
+        subject: &SymbolId,
+        reason: &str,
+    ) -> InvestigationResult<InvestigationCandidate> {
+        self.mutate_ledger(scope, investigation_id, Some(snapshot), |_, ledger| {
+            if ledger.snapshot() != snapshot {
+                return Err(CandidateError::RevisionConflict {
+                    current: ledger.snapshot().to_string(),
+                    expected: snapshot.to_string(),
+                });
+            }
+            ledger.propose(subject, reason).cloned()
+        })
+        .await
+    }
+
+    /// Links an evidence item already pinned to the investigation to a
+    /// candidate. Only the reference is kept, never the evidence text.
+    pub async fn link_candidate_evidence(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        candidate_id: &str,
+        evidence_id: &str,
+        polarity: EvidencePolarity,
+    ) -> InvestigationResult<InvestigationCandidate> {
+        self.mutate_ledger(scope, investigation_id, None, |investigation, ledger| {
+            if !investigation.evidence.iter().any(|e| e.id == evidence_id) {
+                return Err(CandidateError::LinkNotFound {
+                    candidate: candidate_id.to_string(),
+                    evidence: evidence_id.to_string(),
+                });
+            }
+            ledger
+                .link_evidence(candidate_id, evidence_id, polarity)
+                .cloned()
+        })
+        .await
+    }
+
+    /// Observes the references of a candidate again at the ledger's snapshot:
+    /// the caller re-read them and they stand. The state does not change.
+    pub async fn revalidate_candidate(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        candidate_id: &str,
+    ) -> InvestigationResult<InvestigationCandidate> {
+        self.mutate_ledger(scope, investigation_id, None, |investigation, ledger| {
+            let evidence: Vec<String> = ledger
+                .candidate(candidate_id)
+                .ok_or_else(|| CandidateError::CandidateNotFound(candidate_id.to_string()))?
+                .evidence
+                .iter()
+                .map(|link| link.evidence_id.clone())
+                .collect();
+            for evidence_id in &evidence {
+                if !investigation
+                    .evidence
+                    .iter()
+                    .any(|item| item.id == *evidence_id)
+                {
+                    return Err(CandidateError::LinkNotFound {
+                        candidate: candidate_id.to_string(),
+                        evidence: evidence_id.clone(),
+                    });
+                }
+                ledger.revalidate_link(candidate_id, evidence_id)?;
+            }
+            ledger.revalidate_subject(candidate_id).cloned()
+        })
+        .await
+    }
+
+    /// Discards a candidate; only current refuting evidence discards.
+    pub async fn discard_candidate(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        candidate_id: &str,
+    ) -> InvestigationResult<InvestigationCandidate> {
+        self.mutate_ledger(scope, investigation_id, None, |_, ledger| {
+            ledger.discard(candidate_id).cloned()
+        })
+        .await
+    }
+
+    /// Confirms a candidate; only current supporting evidence confirms and
+    /// never while a reference is stale. New evidence never confirms.
+    pub async fn confirm_candidate(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        candidate_id: &str,
+    ) -> InvestigationResult<InvestigationCandidate> {
+        self.mutate_ledger(scope, investigation_id, None, |_, ledger| {
+            ledger.confirm(candidate_id).cloned()
+        })
+        .await
+    }
+
+    /// Removes one candidate of the session.
+    pub async fn remove_candidate(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        candidate_id: &str,
+    ) -> InvestigationResult<()> {
+        self.mutate_ledger(scope, investigation_id, None, |_, ledger| {
+            ledger.remove(candidate_id)
+        })
+        .await
+    }
+
+    /// The session's candidates, or `None` when it has none for this
+    /// investigation. Another session's candidates are never visible.
+    pub async fn candidates(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+    ) -> InvestigationResult<Option<CandidateLedger>> {
+        let investigation = self.scoped_investigation(scope, investigation_id).await?;
+        Ok(read_ledger(&investigation, scope)?)
+    }
+
+    /// Deletes every candidate of the session for this investigation.
+    pub async fn clear_candidates(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+    ) -> InvestigationResult<()> {
+        let _write = self.investigation_writes.lock().await;
+        let mut investigation = self.scoped_investigation(scope, investigation_id).await?;
+        let artifact_id = ledger_artifact_id(scope);
+        if read_ledger(&investigation, scope)?.is_none() {
+            return Ok(());
+        }
+        investigation
+            .artifacts
+            .retain(|a| a.id != artifact_id || a.kind != CANDIDATE_ARTIFACT_KIND);
+        investigation.updated_at = OffsetDateTime::now_utc();
+        self.store.save(&investigation).await?;
+        Ok(())
+    }
+
+    /// Moves the session's ledger from snapshot `from` to `to`.
+    ///
+    /// `still_valid` names the candidates a caller proved unaffected by the
+    /// revision; the others become stale and a confirmed or discarded one is
+    /// reopened. Nothing is confirmed here. A ledger that is no longer at
+    /// `from` refuses the revision and stays as it was.
+    pub async fn apply_candidate_revision(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        from: &str,
+        to: &str,
+        still_valid: &[String],
+    ) -> InvestigationResult<CandidateLedger> {
+        self.mutate_ledger(scope, investigation_id, None, |_, ledger| {
+            ledger.apply_revision(from, to, still_valid)?;
+            Ok(ledger.clone())
+        })
+        .await
+    }
+
+    async fn scoped_investigation(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+    ) -> InvestigationResult<Investigation> {
+        match self.store.load(investigation_id).await? {
+            Some(investigation) if investigation.workspace_id == scope.workspace_id() => {
+                Ok(investigation)
+            }
+            _ => Err(InvestigationError::NotFound(investigation_id.to_string())),
+        }
+    }
+
+    /// Loads the session's ledger (creating it at `anchor` when asked and
+    /// absent), applies `change`, and persists only when it succeeded.
+    async fn mutate_ledger<T>(
+        &self,
+        scope: &CandidateScope,
+        investigation_id: &str,
+        anchor: Option<&str>,
+        change: impl FnOnce(&Investigation, &mut CandidateLedger) -> Result<T, CandidateError>,
+    ) -> InvestigationResult<T> {
+        let _write = self.investigation_writes.lock().await;
+        let mut investigation = self.scoped_investigation(scope, investigation_id).await?;
+        let mut ledger = match (read_ledger(&investigation, scope)?, anchor) {
+            (Some(ledger), _) => ledger,
+            (None, Some(snapshot)) => CandidateLedger::new(scope.clone(), snapshot)?,
+            (None, None) => {
+                return Err(InvestigationError::NotFound(format!(
+                    "candidates of {investigation_id}"
+                )));
+            }
+        };
+        let outcome = change(&investigation, &mut ledger)?;
+        write_ledger(&mut investigation, scope, &ledger);
+        self.store.save(&investigation).await?;
+        Ok(outcome)
+    }
+
     /// Delete an investigation by ID.
     pub async fn delete_investigation(&self, id: &str) -> InvestigationResult<()> {
+        let _write = self.investigation_writes.lock().await;
         // Check if the investigation exists first.
         let existing = self
             .store
@@ -188,7 +452,57 @@ fn validate_status_transition(
     }
 }
 
-/// Create an InvestigationService wrapping a shared store.
+/// The id of the artifact that holds one session's ledger.
+fn ledger_artifact_id(scope: &CandidateScope) -> String {
+    format!("{}{}", CANDIDATE_ARTIFACT_ID_PREFIX, scope.session_id())
+}
+
+/// Reads the session's ledger out of an investigation. A ledger whose own
+/// scope is not the caller's is treated as absent: it is not the caller's.
+fn read_ledger(
+    investigation: &Investigation,
+    scope: &CandidateScope,
+) -> Result<Option<CandidateLedger>, CandidateError> {
+    let id = ledger_artifact_id(scope);
+    let Some(artifact) = investigation.artifacts.iter().find(|a| a.id == id) else {
+        return Ok(None);
+    };
+    if artifact.kind != CANDIDATE_ARTIFACT_KIND {
+        return Err(CandidateError::ArtifactConflict(id));
+    }
+    let ledger = CandidateLedger::from_wire(&artifact.content)?;
+    if ledger.scope() != scope {
+        return Err(CandidateError::ArtifactConflict(id));
+    }
+    Ok(Some(ledger))
+}
+
+/// Writes the session's ledger into an investigation, replacing its artifact.
+fn write_ledger(
+    investigation: &mut Investigation,
+    scope: &CandidateScope,
+    ledger: &CandidateLedger,
+) {
+    let id = ledger_artifact_id(scope);
+    let artifact = Artifact {
+        id: id.clone(),
+        kind: CANDIDATE_ARTIFACT_KIND.to_string(),
+        title: "Candidates under review".to_string(),
+        content: ledger.to_wire(),
+        generated_from: None,
+        provenance: None,
+    };
+    match investigation.artifacts.iter_mut().find(|a| a.id == id) {
+        Some(existing) => *existing = artifact,
+        None => investigation.artifacts.push(artifact),
+    }
+    investigation.updated_at = OffsetDateTime::now_utc();
+}
+
+/// Create one InvestigationService for a store and share it across callers.
+///
+/// The service serializes aggregate mutations only within its own instance;
+/// constructing separate services over the same store does not share that lock.
 pub fn new_investigation_service<S: InvestigationStore + 'static>(
     store: S,
 ) -> InvestigationService<S> {

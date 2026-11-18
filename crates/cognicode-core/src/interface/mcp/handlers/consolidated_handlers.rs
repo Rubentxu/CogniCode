@@ -675,7 +675,7 @@ pub async fn handle_project_insights(
         symbols_in_cycles: report.summary.symbols_in_cycles,
     };
 
-    let summary = format!(
+    let mut summary = format!(
         "{} symbols, {} edges, {} communities, {} cycles, health {:.0}/100",
         report.summary.total_symbols,
         report.summary.total_edges,
@@ -683,6 +683,9 @@ pub async fn handle_project_insights(
         report.summary.total_cycles,
         report.health_score
     );
+    if report.summary.total_edges == 0 {
+        summary.push_str("; no ranking signal: the graph has no edges");
+    }
 
     Ok(ProjectInsightsOutput {
         total_symbols: report.summary.total_symbols,

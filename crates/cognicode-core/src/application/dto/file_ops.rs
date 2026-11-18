@@ -232,6 +232,40 @@ pub struct SearchContentResult {
     /// from the serialized result.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub unread: Vec<super::UnreadEntry>,
+    /// What the text index did for this search; absent when the service has
+    /// no text index.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_index: Option<TextIndexReport>,
+}
+
+/// What a text index did for one content search.
+///
+/// The index only decides which files are read; whatever it decides, every
+/// match in the answer was verified against the file as it was read during
+/// the search. The counters say how much of the tree was read and how much
+/// was not.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TextIndexReport {
+    /// The version of the tokenizer the index was built with. An index of
+    /// another version is not read by this one.
+    pub tokenizer_version: u32,
+    /// Whether the index narrowed this search. When it did not, every file
+    /// was read, exactly as without an index, and `reason` says why.
+    pub used: bool,
+    /// Why the index could not narrow the search.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Files the index named as possible matches, which were read and
+    /// verified.
+    pub candidates: usize,
+    /// Files the index vouched for and the search did not read.
+    pub skipped: usize,
+    /// Files the index could not vouch for (new or changed), which were read
+    /// and indexed.
+    pub indexed_now: usize,
+    /// Files read without the index: ones kept out of it by the exclusion
+    /// policy or by size, and ones changed too recently to vouch for.
+    pub read_directly: usize,
 }
 
 // ============================================================================

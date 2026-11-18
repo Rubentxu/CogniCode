@@ -440,7 +440,8 @@ pub(crate) fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
         Err(e) => return Err(HandlerError::Internal(format!("Graph store error: {e}"))),
     };
     let after = service.current_graph_revision();
-    let measure = if before == after {
+    let measure = if before == after && std::sync::Arc::ptr_eq(&service.get_project_graph(), &graph)
+    {
         service.graph_measures().of(after, &graph)
     } else {
         None
@@ -599,7 +600,15 @@ pub struct GraphExplainOutput {
     pub callees: Vec<ExplainNeighbor>,
     pub fan_in: usize,
     pub fan_out: usize,
-    /// One line saying what the answer says.
+    /// Coverage of the graph read, or `unknown` when it was not measured.
+    pub coverage: CoverageInfo,
+    /// Maximum neighbours published in each direction.
+    pub neighbor_limit: usize,
+    /// Whether the callers list was cut at `neighbor_limit`.
+    pub callers_truncated: bool,
+    /// Whether the callees list was cut at `neighbor_limit`.
+    pub callees_truncated: bool,
+    /// One line saying what the answer says, including coverage and truncation.
     pub summary: String,
 }
 
@@ -613,10 +622,23 @@ pub struct ExplainNode {
     pub line: u32,
 }
 
+/// One direct relation to the explained node, retaining the graph's orientation.
 #[derive(Debug, serde::Serialize, JsonSchema)]
 pub struct ExplainNeighbor {
+    /// The neighbouring symbol's identifier.
     pub symbol: String,
+    /// The actual relation kind stored by the graph.
     pub relation: String,
+    /// Whether this relation points into or out of the explained node.
+    pub side: String,
+    /// The source endpoint as stored by the graph.
+    pub source: String,
+    /// The target endpoint as stored by the graph.
+    pub target: String,
+    /// How the graph established the relation.
+    pub provenance: String,
+    /// Confidence recorded for the relation.
+    pub confidence: f64,
     pub depth: usize,
 }
 
@@ -625,11 +647,9 @@ pub async fn handle_graph_explain(
     ctx: &HandlerContext,
     input: GraphExplainInput,
 ) -> HandlerResult<GraphExplainOutput> {
-    let graph = match ctx.get_graph_store().load_graph_shared() {
-        Ok(Some(g)) => g,
-        Ok(None) => return Err(HandlerError::Internal("No graph available".into())),
-        Err(e) => return Err(HandlerError::Internal(format!("{e}"))),
-    };
+    const NEIGHBOR_LIMIT: usize = 20;
+
+    let GraphRead { graph, measure } = read_the_graph(ctx)?;
 
     // Find the target by name
     let matches = graph.find_by_name(&input.symbol);
@@ -655,36 +675,56 @@ pub async fn handle_graph_explain(
 
     let fan_in = graph.fan_in(&sid);
     let fan_out = graph.fan_out(&sid);
-
-    let callers: Vec<ExplainNeighbor> = graph
-        .callers(&sid)
+    let mut callers: Vec<ExplainNeighbor> = graph
+        .callers_with_metadata(&sid)
         .into_iter()
-        .take(20)
-        .map(|caller_id| ExplainNeighbor {
-            symbol: caller_id.as_str().to_string(),
-            relation: "calls".into(),
+        .map(|(source, kind, provenance, confidence)| ExplainNeighbor {
+            symbol: source.as_str().to_string(),
+            relation: kind.to_string(),
+            side: "incoming".into(),
+            source: source.as_str().to_string(),
+            target: sid.as_str().to_string(),
+            provenance: provenance.to_string(),
+            confidence,
             depth: 1,
         })
         .collect();
-
-    let callees: Vec<ExplainNeighbor> = graph
-        .callees(&sid)
+    let mut callees: Vec<ExplainNeighbor> = graph
+        .callees_with_metadata(&sid)
         .into_iter()
-        .take(20)
-        .map(|(callee_id, _dep)| ExplainNeighbor {
-            symbol: callee_id.as_str().to_string(),
-            relation: "called_by".into(),
+        .map(|(target, kind, provenance, confidence)| ExplainNeighbor {
+            symbol: target.as_str().to_string(),
+            relation: kind.to_string(),
+            side: "outgoing".into(),
+            source: sid.as_str().to_string(),
+            target: target.as_str().to_string(),
+            provenance: provenance.to_string(),
+            confidence,
             depth: 1,
         })
         .collect();
+    let callers_truncated = callers.len() > NEIGHBOR_LIMIT;
+    let callees_truncated = callees.len() > NEIGHBOR_LIMIT;
+    callers.truncate(NEIGHBOR_LIMIT);
+    callees.truncate(NEIGHBOR_LIMIT);
+    let coverage = measure
+        .as_ref()
+        .map(|measure| CoverageInfo::of(&measure.coverage))
+        .unwrap_or_else(CoverageInfo::unmeasured);
 
     let summary = format!(
-        "{}: {} callers, {} callees (fan-in {}, fan-out {})",
+        "{}: {} callers, {} callees (fan-in {}, fan-out {}, coverage {}){}",
         node.label,
         callers.len(),
         callees.len(),
         fan_in,
-        fan_out
+        fan_out,
+        coverage.status,
+        if callers_truncated || callees_truncated {
+            "; neighbour list(s) truncated at 20"
+        } else {
+            ""
+        }
     );
     Ok(GraphExplainOutput {
         node,
@@ -692,6 +732,10 @@ pub async fn handle_graph_explain(
         callees,
         fan_in,
         fan_out,
+        coverage,
+        neighbor_limit: NEIGHBOR_LIMIT,
+        callers_truncated,
+        callees_truncated,
         summary,
     })
 }

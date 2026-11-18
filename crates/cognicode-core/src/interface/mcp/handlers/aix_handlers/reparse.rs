@@ -272,7 +272,7 @@ pub(crate) async fn run(
             Err(e) => {
                 rebuild_failed = true;
                 tracing::warn!("Failed to rebuild call graph in reparse_on_edit: {}", e);
-                // Don't fail the whole operation - FTS5/DashMap are already updated
+                // Don't fail the whole operation - the symbol index is already updated
             }
         }
     }
