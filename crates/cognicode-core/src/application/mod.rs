@@ -3,6 +3,7 @@
 //! This module contains the application services that orchestrate
 //! domain logic and provide use case implementations.
 
+pub mod advisory_correlation;
 pub mod architecture;
 pub mod behaviors;
 pub mod cancellation;
