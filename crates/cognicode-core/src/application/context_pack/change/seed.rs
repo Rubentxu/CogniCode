@@ -28,11 +28,11 @@ use serde::{Deserialize, Serialize};
 
 use super::input::{ChangeInput, Content, FileChange, SourceChange};
 use super::line_diff::{Hunk, line_diff};
-use crate::application::context_pack::ports::{DeclarationReader, SnapshotView};
+use crate::application::context_pack::ports::{DeclarationReader, DeclarationSpan, SnapshotView};
 use crate::application::context_pack::service::ItemRange;
 use crate::domain::aggregates::call_graph::SymbolId;
 use crate::domain::findings::digest::sha256_hex;
-use crate::domain::value_objects::published_line;
+use crate::domain::value_objects::{SymbolKind, published_line};
 
 /// How a seed changed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,6 +305,25 @@ struct Declared {
     header_end: u32,
 }
 
+/// Whether a symbol is a declaration a change can be attributed to.
+///
+/// Parameters, generics and imports are parts of another declaration. A
+/// variable is only its own declaration when its span starts on its own line:
+/// a local binding is given the span of the function that holds it, and
+/// seeding it would answer about a name nobody can depend on.
+fn is_declaration(
+    symbol: &crate::domain::aggregates::Symbol,
+    span: Option<&DeclarationSpan>,
+) -> bool {
+    match symbol.kind() {
+        SymbolKind::Parameter | SymbolKind::Generic | SymbolKind::Import => false,
+        SymbolKind::Variable => {
+            span.is_none_or(|span| span.start_line == published_line(symbol.location().line()))
+        }
+        _ => true,
+    }
+}
+
 fn declared_spans(
     change: &SourceChange,
     after: &str,
@@ -313,10 +332,14 @@ fn declared_spans(
 ) -> Vec<Declared> {
     symbols
         .iter()
-        .map(|(id, symbol)| {
+        .filter_map(|(id, symbol)| {
             let location = symbol.location();
-            match declarations.declaration(&change.path, after, location.line(), location.column())
-            {
+            let span =
+                declarations.declaration(&change.path, after, location.line(), location.column());
+            if !is_declaration(symbol, span.as_ref()) {
+                return None;
+            }
+            Some(match span {
                 Some(span) => Declared {
                     id: id.clone(),
                     start: span.start_line,
@@ -333,7 +356,7 @@ fn declared_spans(
                         header_end: line,
                     }
                 }
-            }
+            })
         })
         .collect()
 }
@@ -438,7 +461,7 @@ mod tests {
     use crate::application::context_pack::ports::DeclarationSpan;
     use crate::domain::aggregates::call_graph::CallGraph;
     use crate::domain::aggregates::symbol::Symbol;
-    use crate::domain::value_objects::{Location, SymbolKind};
+    use crate::domain::value_objects::Location;
 
     /// The head side of `src/a.rs`: `parse` is lines 1-3, `run` lines 4-6.
     const HEAD: &str =
@@ -518,6 +541,51 @@ mod tests {
             .iter()
             .map(|s| (s.id.as_str().split(':').nth(1).unwrap().to_string(), s.kind))
             .collect()
+    }
+
+    /// Gives every symbol the span of the function that holds it, as the
+    /// reader does for a local binding.
+    struct EnclosingFunction;
+
+    impl DeclarationReader for EnclosingFunction {
+        fn declaration(&self, _: &str, source: &str, _: u32, _: u32) -> Option<DeclarationSpan> {
+            Some(DeclarationSpan {
+                start_line: 1,
+                end_line: 3,
+                header: source.lines().next()?.to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn a_local_binding_does_not_seed_next_to_the_function_that_holds_it() {
+        let mut graph = CallGraph::new();
+        graph.add_symbol(Symbol::new(
+            "parse",
+            SymbolKind::Function,
+            Location::new("src/a.rs", 0, 3),
+        ));
+        graph.add_symbol(Symbol::new(
+            "one",
+            SymbolKind::Variable,
+            Location::new("src/a.rs", 1, 8),
+        ));
+        graph.add_symbol(Symbol::new(
+            "input",
+            SymbolKind::Parameter,
+            Location::new("src/a.rs", 0, 9),
+        ));
+        let mut view = snapshot();
+        view.graph = Arc::new(graph);
+        let before = HEAD.replace("input: &str", "input: &[u8]");
+
+        let seed = derive(
+            &input(vec![modified(&before, HEAD)]),
+            &view,
+            &EnclosingFunction,
+        );
+
+        assert_eq!(names(&seed), [("parse".to_string(), SeedKind::Signature)]);
     }
 
     #[test]
