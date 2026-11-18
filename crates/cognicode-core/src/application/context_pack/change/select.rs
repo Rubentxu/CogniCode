@@ -65,7 +65,7 @@ impl PendingRef {
         let target = self.target.as_str();
         target == name
             || target
-                .rsplit(|c| c == ':' || c == '.')
+                .rsplit([':', '.'])
                 .next()
                 .is_some_and(|last| last == name)
     }

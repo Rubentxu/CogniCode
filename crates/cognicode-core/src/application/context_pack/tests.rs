@@ -161,6 +161,7 @@ fn pack(
         sources: &f.files,
         declarations: decl,
         measure,
+        token_scope: "",
     }
     .build(&request)
 }

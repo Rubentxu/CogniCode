@@ -196,6 +196,11 @@ pub struct ContextPackService<'a> {
     pub declarations: &'a dyn DeclarationReader,
     /// The measure of the budget.
     pub measure: &'a dyn TokenMeasure,
+    /// What else a continuation token is bound to besides the snapshot:
+    /// empty for a pack that depends on the snapshot alone, the digest of
+    /// the change for a pack about one. A token issued under one scope is
+    /// refused under any other.
+    pub token_scope: &'a str,
 }
 
 impl ContextPackService<'_> {
@@ -369,17 +374,18 @@ impl ContextPackService<'_> {
     /// budget— has no token: following it would ask for the same page
     /// again, forever. The budget is what has to change.
     fn token_for(&self, next: usize, offset: usize, total: usize) -> Option<String> {
-        (next < total && next > offset).then(|| {
-            format!(
-                "v1.{}.{}",
-                self.snapshot
-                    .digest
-                    .chars()
-                    .take(TOKEN_DIGEST_PREFIX)
-                    .collect::<String>(),
-                next
-            )
-        })
+        (next < total && next > offset).then(|| format!("v1.{}.{}", self.binding(), next))
+    }
+
+    /// The prefix of the digest a continuation token is bound to: the
+    /// snapshot, and the token scope when the pack has one.
+    fn binding(&self) -> String {
+        let bound = if self.token_scope.is_empty() {
+            self.snapshot.digest.clone()
+        } else {
+            sha256_hex(format!("{}\n{}", self.snapshot.digest, self.token_scope).as_bytes())
+        };
+        bound.chars().take(TOKEN_DIGEST_PREFIX).collect()
     }
 
     /// The position a continuation token asks for, or why it is refused.
@@ -395,13 +401,7 @@ impl ContextPackService<'_> {
         let position: usize = position
             .parse()
             .map_err(|_| ContextPackError::InvalidContinuation)?;
-        let current: String = self
-            .snapshot
-            .digest
-            .chars()
-            .take(TOKEN_DIGEST_PREFIX)
-            .collect();
-        if digest != current {
+        if digest != self.binding() {
             return Err(ContextPackError::StaleContinuation);
         }
         Ok(position)
