@@ -9,7 +9,7 @@
 use std::fs::Metadata;
 use std::path::Path;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
 use parking_lot::RwLock;
 
@@ -18,6 +18,7 @@ use crate::application::services::text_index::{
     FileStamp, GateVerdict, MAX_INDEXED_BYTES, TOKENIZER_VERSION, TextIndex, TextIndexConfig,
     TrigramPlan, plan_literal, plan_regex, trigrams_of,
 };
+use crate::domain::value_objects::file_time::epoch_nanos;
 
 /// A text index shared by the handles of a service, with the policy that says
 /// what stays out of it.
@@ -218,20 +219,13 @@ impl<'a> IndexedWalk<'a> {
 }
 
 fn now_ns() -> i128 {
-    nanos_since_epoch(SystemTime::now())
-}
-
-fn nanos_since_epoch(time: SystemTime) -> i128 {
-    match time.duration_since(UNIX_EPOCH) {
-        Ok(after) => after.as_nanos() as i128,
-        Err(before) => -(before.duration().as_nanos() as i128),
-    }
+    i128::from(epoch_nanos(SystemTime::now()))
 }
 
 fn stamp_of(metadata: &Metadata) -> FileStamp {
     let modified_ns = metadata
         .modified()
-        .map(nanos_since_epoch)
+        .map(|time| i128::from(epoch_nanos(time)))
         .unwrap_or(i128::MAX);
     FileStamp {
         len: metadata.len(),

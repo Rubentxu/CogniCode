@@ -275,7 +275,7 @@ mod tests {
 
     #[test]
     fn the_fuzzy_score_is_the_previous_one_on_every_pair() {
-        let alphabet: Vec<char> = "abc_é日".chars().collect();
+        let alphabet: Vec<char> = "abc_é\u{65e5}".chars().collect();
         let mut words = vec![String::new()];
         for _ in 0..4 {
             let next: Vec<String> = words
@@ -300,7 +300,13 @@ mod tests {
 
     #[test]
     fn the_signature_never_drops_a_name_that_matches() {
-        let names = ["handle_request", "ÑandúFoo", "日本語_x", "a1_b2", "zzz"];
+        let names = [
+            "handle_request",
+            "ÑandúFoo",
+            "\u{65e5}\u{672c}\u{8a9e}_x",
+            "a1_b2",
+            "zzz",
+        ];
         for name in names {
             let lower = name.to_lowercase();
             let chars: Vec<char> = lower.chars().collect();
