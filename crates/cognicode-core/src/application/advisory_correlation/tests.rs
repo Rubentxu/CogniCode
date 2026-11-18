@@ -90,7 +90,7 @@ fn state_of(answer: &AdvisoryAnswer, name: &str) -> PackageState {
 fn an_affected_package_is_reported_and_workspace_members_are_not_evaluated() {
     let answer = run(&query(supply(FEED)), true);
 
-    assert_eq!(answer.evaluation, Evaluation::Evaluated);
+    assert_eq!(answer.evaluation, AdvisoryEvaluation::Evaluated);
     assert_eq!(state_of(&answer, "serde"), PackageState::Affected);
     assert_eq!(state_of(&answer, "local"), PackageState::NotEvaluated);
     assert_eq!(state_of(&answer, "app"), PackageState::NotEvaluated);
@@ -133,12 +133,12 @@ fn a_fixed_feed_that_does_not_cover_the_version_is_not_found_in_scope() {
 fn an_absent_feed_evaluates_nothing_and_never_says_clean() {
     let answer = run(&query(FeedSupply::Absent), true);
 
-    assert_eq!(answer.evaluation, Evaluation::NotEvaluated);
+    assert_eq!(answer.evaluation, AdvisoryEvaluation::NotEvaluated);
     assert_eq!(answer.feed.status, FeedStatus::Absent);
     assert_eq!(answer.totals.not_found_in_scope, 0);
     assert_eq!(answer.totals.affected, 0);
     assert_eq!(state_of(&answer, "serde"), PackageState::NotEvaluated);
-    assert_eq!(answer.units[0].evaluation, Evaluation::NotEvaluated);
+    assert_eq!(answer.units[0].evaluation, AdvisoryEvaluation::NotEvaluated);
     assert!(answer.units[0].reasons.contains(&Reason::FeedUnavailable));
 }
 
@@ -155,7 +155,11 @@ fn an_unreadable_malformed_or_oversized_feed_evaluates_nothing() {
     for (feed, status) in cases {
         let answer = run(&query(feed), true);
         assert_eq!(answer.feed.status, status);
-        assert_eq!(answer.evaluation, Evaluation::NotEvaluated, "{status:?}");
+        assert_eq!(
+            answer.evaluation,
+            AdvisoryEvaluation::NotEvaluated,
+            "{status:?}"
+        );
         assert_eq!(answer.totals.not_found_in_scope, 0, "{status:?}");
     }
     let tiny = FeedLimits {
@@ -179,7 +183,7 @@ fn a_feed_that_differs_from_the_pinned_digest_is_not_used() {
 
     assert_eq!(answer.feed.status, FeedStatus::DigestMismatch);
     assert!(answer.feed.pinned);
-    assert_eq!(answer.evaluation, Evaluation::NotEvaluated);
+    assert_eq!(answer.evaluation, AdvisoryEvaluation::NotEvaluated);
     assert_eq!(state_of(&answer, "serde"), PackageState::NotEvaluated);
 }
 
@@ -199,7 +203,7 @@ fn a_stale_feed_keeps_its_matches_but_never_concludes_from_silence() {
 
     let answer = run(&ask, true);
 
-    assert_eq!(answer.feed.freshness, Freshness::Stale);
+    assert_eq!(answer.feed.freshness, FeedFreshness::Stale);
     assert_eq!(state_of(&answer, "serde"), PackageState::Unknown);
     assert_eq!(answer.totals.not_found_in_scope, 0);
     assert!(answer.units[0].reasons.contains(&Reason::FeedStale));
@@ -219,7 +223,7 @@ fn a_feed_inside_the_window_is_fresh() {
     let mut ask = query(supply(FEED));
     ask.max_age_days = Some(30);
     ask.now_unix = PUBLISHED + 29 * DAY;
-    assert_eq!(run(&ask, true).feed.freshness, Freshness::Fresh);
+    assert_eq!(run(&ask, true).feed.freshness, FeedFreshness::Fresh);
 }
 
 #[test]
@@ -262,7 +266,7 @@ fn coverage_names_what_was_and_was_not_considered() {
 fn a_unit_without_a_lockfile_is_not_evaluated() {
     let answer = run(&query(supply(FEED)), false);
 
-    assert_eq!(answer.units[0].evaluation, Evaluation::NotEvaluated);
+    assert_eq!(answer.units[0].evaluation, AdvisoryEvaluation::NotEvaluated);
     assert!(answer.units[0].reasons.contains(&Reason::NoLockfile));
     assert!(answer.units[0].packages.is_empty());
 }
@@ -275,7 +279,7 @@ fn an_inventory_with_no_units_is_not_evaluated() {
         &empty,
         evaluate_feed(&query(supply(FEED)), &FeedLimits::default()),
     );
-    assert_eq!(answer.evaluation, Evaluation::NotEvaluated);
+    assert_eq!(answer.evaluation, AdvisoryEvaluation::NotEvaluated);
 }
 
 #[test]

@@ -1,5 +1,5 @@
 use super::*;
-use crate::application::advisory_correlation::{FeedStatus, Freshness};
+use crate::application::advisory_correlation::{FeedFreshness, FeedStatus};
 use crate::domain::advisory_matching::{PackageState, Reason};
 use std::process::Command;
 
@@ -187,8 +187,8 @@ fn the_window_is_judged_against_the_clock_the_goal_is_given() {
     let fresh = advisories_at(repo.path(), &ask, PUBLISHED + 86_400).expect("answer");
     let stale = advisories_at(repo.path(), &ask, PUBLISHED + 90 * 86_400).expect("answer");
 
-    assert_eq!(fresh.advisories.feed.freshness, Freshness::Fresh);
-    assert_eq!(stale.advisories.feed.freshness, Freshness::Stale);
+    assert_eq!(fresh.advisories.feed.freshness, FeedFreshness::Fresh);
+    assert_eq!(stale.advisories.feed.freshness, FeedFreshness::Stale);
 }
 
 #[test]

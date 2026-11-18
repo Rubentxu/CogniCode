@@ -20,7 +20,7 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::application::advisory_correlation::{
-    AdvisoryAnswer, AdvisoryQuery, Evaluation, FeedSupply, answer as correlate,
+    AdvisoryAnswer, AdvisoryEvaluation, AdvisoryQuery, FeedSupply, answer as correlate,
 };
 use crate::application::dependency_inventory::InventoryLimits;
 use crate::domain::advisory_matching::FeedLimits;
@@ -126,7 +126,7 @@ fn read_feed(workspace: &Path, raw: &str, limits: &FeedLimits) -> FeedSupply {
 
 fn summarise(answer: &AdvisoryAnswer) -> String {
     let totals = &answer.totals;
-    if answer.evaluation == Evaluation::NotEvaluated {
+    if answer.evaluation == AdvisoryEvaluation::NotEvaluated {
         return format!(
             "Revision {}: not evaluated, the feed is {:?}; {} resolved package(s) have no advisory verdict.",
             answer.revision.revision, answer.feed.status, totals.total

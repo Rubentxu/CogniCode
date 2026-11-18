@@ -98,7 +98,7 @@ pub enum FeedStatus {
 /// Whether the feed is recent enough to conclude from its silence.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Freshness {
+pub enum FeedFreshness {
     /// The newest advisory is inside the accepted window.
     Fresh,
     /// The newest advisory is older than the accepted window.
@@ -125,7 +125,7 @@ pub struct FeedReport {
     /// What went wrong, when the feed was not usable.
     pub problem: Option<String>,
     /// Whether the feed is recent enough.
-    pub freshness: Freshness,
+    pub freshness: FeedFreshness,
     /// The `modified` of the newest accepted advisory.
     pub newest_modified: Option<String>,
     /// The records the feed carries.
@@ -151,7 +151,7 @@ pub struct FeedReport {
 /// Whether a result was computed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Evaluation {
+pub enum AdvisoryEvaluation {
     /// Packages were correlated with the feed.
     Evaluated,
     /// They were not: absence of matches says nothing.
@@ -207,7 +207,7 @@ pub struct UnitAdvisories {
     /// The digest of the feed this result was computed against.
     pub feed_digest: Option<String>,
     /// Whether the unit was correlated.
-    pub evaluation: Evaluation,
+    pub evaluation: AdvisoryEvaluation,
     /// Why the unit was not, or why its absences are not conclusive.
     pub reasons: Vec<Reason>,
     /// How many packages are in each state.
@@ -235,7 +235,7 @@ pub struct AdvisoryAnswer {
     /// The revision the inventory describes.
     pub revision: RevisionAnchor,
     /// Whether the revision was correlated with the feed.
-    pub evaluation: Evaluation,
+    pub evaluation: AdvisoryEvaluation,
     /// What was done with the feed.
     pub feed: FeedReport,
     /// What was considered.
@@ -265,7 +265,7 @@ fn empty_report(status: FeedStatus, problem: Option<String>, pinned: bool) -> Fe
         bytes: None,
         status,
         problem,
-        freshness: Freshness::Unchecked,
+        freshness: FeedFreshness::Unchecked,
         newest_modified: None,
         records_seen: 0,
         records_accepted: 0,
@@ -296,18 +296,20 @@ fn status_of(error: &FeedError) -> FeedStatus {
     }
 }
 
-fn freshness_of(parsed: &ParsedFeed, max_age_days: Option<u32>, now_unix: i64) -> Freshness {
+fn freshness_of(parsed: &ParsedFeed, max_age_days: Option<u32>, now_unix: i64) -> FeedFreshness {
     let Some(days) = max_age_days else {
-        return Freshness::Unchecked;
+        return FeedFreshness::Unchecked;
     };
     match parsed.newest_modified_unix() {
-        None => Freshness::Undated,
-        Some(newest) if now_unix.saturating_sub(newest) > i64::from(days) * DAY => Freshness::Stale,
-        Some(_) => Freshness::Fresh,
+        None => FeedFreshness::Undated,
+        Some(newest) if now_unix.saturating_sub(newest) > i64::from(days) * DAY => {
+            FeedFreshness::Stale
+        }
+        Some(_) => FeedFreshness::Fresh,
     }
 }
 
-fn absence_of(parsed: &ParsedFeed, freshness: Freshness) -> Absence {
+fn absence_of(parsed: &ParsedFeed, freshness: FeedFreshness) -> Absence {
     if parsed.crates_io_records() == 0 {
         return Absence::Inconclusive(Reason::EcosystemNotCovered);
     }
@@ -315,8 +317,8 @@ fn absence_of(parsed: &ParsedFeed, freshness: Freshness) -> Absence {
         return Absence::Inconclusive(Reason::FeedIncomplete);
     }
     match freshness {
-        Freshness::Stale | Freshness::Undated => Absence::Inconclusive(Reason::FeedStale),
-        Freshness::Fresh | Freshness::Unchecked => Absence::Conclusive,
+        FeedFreshness::Stale | FeedFreshness::Undated => Absence::Inconclusive(Reason::FeedStale),
+        FeedFreshness::Fresh | FeedFreshness::Unchecked => Absence::Conclusive,
     }
 }
 
@@ -423,9 +425,9 @@ fn unit_advisories(unit: &WorkspaceInventory, feed: &FeedEvaluation) -> UnitAdvi
     reasons.sort_unstable();
     reasons.dedup();
     let evaluation = if feed.parsed.is_some() && unit.lockfile.is_some() {
-        Evaluation::Evaluated
+        AdvisoryEvaluation::Evaluated
     } else {
-        Evaluation::NotEvaluated
+        AdvisoryEvaluation::NotEvaluated
     };
     UnitAdvisories {
         root: unit.root.clone(),
@@ -455,9 +457,9 @@ pub fn correlate_inventory(
         totals.merge(&unit.counts);
     }
     let evaluation = if feed.parsed.is_some() && !units.is_empty() {
-        Evaluation::Evaluated
+        AdvisoryEvaluation::Evaluated
     } else {
-        Evaluation::NotEvaluated
+        AdvisoryEvaluation::NotEvaluated
     };
     let coverage = AdvisoryCoverage {
         ecosystems_considered: vec![CRATES_IO.to_string()],
