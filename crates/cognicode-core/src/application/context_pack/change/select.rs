@@ -33,8 +33,8 @@ use crate::application::context_pack::selection::{
     Candidate, ContextSelection, MAX_CANDIDATES, Reason,
 };
 use crate::application::context_pack::service::ItemRange;
+use crate::application::services::graph_operators::{Relation, Target, TypedQuery, run};
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
-use crate::domain::value_objects::DependencyType;
 
 /// The most consumers selected for one changed symbol.
 pub const MAX_CONSUMERS_PER_SYMBOL: usize = 20;
@@ -263,14 +263,18 @@ fn file_gaps(seed: &ChangeSeed) -> Vec<ChangeGap> {
 
 /// The symbols that `symbol` declares it satisfies.
 fn contracts_of(graph: &CallGraph, symbol: &SeedSymbol) -> Vec<Candidate> {
-    let mut found: Vec<Candidate> = graph
-        .dependencies_with_metadata(&symbol.id)
-        .filter(|(_, edge, _, _)| **edge == DependencyType::Inherits)
-        .map(|(target, edge, _, _)| Candidate {
-            id: target.clone(),
+    let query = TypedQuery::new(Target::Id(symbol.id.clone()), vec![Relation::Contracts]);
+    let Ok(answer) = run(graph, &query, None) else {
+        return Vec::new();
+    };
+    let mut found: Vec<Candidate> = answer
+        .rows
+        .into_iter()
+        .map(|row| Candidate {
+            id: row.id,
             reason: Reason::ContractOfChange {
                 changed: symbol.id.clone(),
-                edge: edge.to_string(),
+                edge: row.via.to_string(),
             },
             score: 0.0,
         })
@@ -281,28 +285,32 @@ fn contracts_of(graph: &CallGraph, symbol: &SeedSymbol) -> Vec<Candidate> {
 
 /// The symbols that depend on `symbol` through one edge, and the gap when
 /// there are more than the bound.
+///
+/// The consumers are retrieved by the shared read operators: the most
+/// trusted edge of each one, tests left out, the best
+/// [`MAX_CONSUMERS_PER_SYMBOL`] kept.
 fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<ChangeGap>) {
-    let mut found: Vec<Candidate> = graph
-        .incoming_dependencies_with_metadata(&symbol.id)
+    let query = TypedQuery::new(Target::Id(symbol.id.clone()), vec![Relation::Dependents])
+        .without_tests()
+        .with_top_k(MAX_CONSUMERS_PER_SYMBOL);
+    let Ok(answer) = run(graph, &query, None) else {
+        return (Vec::new(), None);
+    };
+    let total = answer.explain.matched;
+    let found: Vec<Candidate> = answer
+        .rows
         .into_iter()
-        .filter(|(source, edge, _, _)| {
-            **source != symbol.id && **edge != DependencyType::Contains && !is_test(graph, source)
-        })
-        .map(|(source, edge, provenance, confidence)| Candidate {
-            id: source.clone(),
+        .map(|row| Candidate {
+            id: row.id,
             reason: Reason::ConsumerOfChange {
                 changed: symbol.id.clone(),
-                edge: edge.to_string(),
-                provenance: provenance.to_string(),
-                confidence,
+                edge: row.via.to_string(),
+                provenance: row.provenance.to_string(),
+                confidence: row.confidence,
             },
-            score: confidence,
+            score: row.confidence,
         })
         .collect();
-    found.sort_by(|a, b| b.score.total_cmp(&a.score).then_with(|| a.id.cmp(&b.id)));
-    found.dedup_by(|b, a| a.id == b.id);
-    let total = found.len();
-    found.truncate(MAX_CONSUMERS_PER_SYMBOL);
     let gap = (total > found.len()).then(|| {
         ChangeGap::new(
             "consumers_truncated",
@@ -426,7 +434,7 @@ mod tests {
     use crate::application::context_pack::change::seed::ChangedFile;
     use crate::domain::aggregates::symbol::Symbol;
     use crate::domain::services::ExtractionContext;
-    use crate::domain::value_objects::{Location, SymbolKind};
+    use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
 
     struct World {
         graph: CallGraph,
