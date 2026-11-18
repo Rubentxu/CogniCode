@@ -281,6 +281,13 @@ pub fn list_tool_capabilities(tool_name: &str) -> Option<ToolCapabilities> {
             precision: "AST",
         },
 
+        // The advisory correlation reads the lockfile bytes and a feed file; it
+        // does not use the language registry grammars either.
+        "advisories" => ToolCapabilities {
+            langs: &[],
+            precision: "n/a",
+        },
+
         "find" | "inspect" | "trace" | "impact" | "overview" | "audit" | "change" => {
             ToolCapabilities {
                 langs: tree_sitter_langs(),
@@ -404,6 +411,7 @@ pub fn stable_tool_names_with_capabilities() -> &'static [&'static str] {
         "preflight",
         "dependencies",
         "pack",
+        "advisories",
     ]
 }
 

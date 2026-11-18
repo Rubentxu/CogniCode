@@ -11,7 +11,8 @@
 //! **real** versioned snapshot reads. It delegates to
 //! [`SharedGraph::current_id`] and [`SharedGraph::get_at`] which read
 //! from the lock-free `VersionedGraphCache` ring inside the cache.
-//! The inner `InMemoryGraphStore` is single-version and reports id 1.
+//! The inner `InMemoryGraphStore` is single-version and numbers its own
+//! writes; its ids are not the ring's.
 
 use std::sync::Arc;
 

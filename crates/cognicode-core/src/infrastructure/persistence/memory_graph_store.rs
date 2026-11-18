@@ -3,35 +3,98 @@
 //! This implementation stores data in memory, useful for tests and scenarios
 //! where persistence is not required.
 //!
-//! ADR-035: this is a **single-version** store. It exposes the checkpoint
-//! methods but reports a fixed id of 1 (or `None` when cold) and always
-//! returns the current graph. Use [`CachedGraphStore`](crate::infrastructure::persistence::CachedGraphStore)
+//! The graph is kept in its serialized form, the way a persistent store keeps
+//! it, and decoded at most once per write: every reader of the same content
+//! gets the same shared snapshot, so a cache keyed by the identity of that
+//! snapshot can hit. It is a **single-version** store: it holds one snapshot,
+//! identified by a [`CheckpointId`] that changes with every write and is never
+//! handed out twice. Use [`CachedGraphStore`](crate::infrastructure::persistence::CachedGraphStore)
 //! for real versioned snapshot reads.
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::domain::aggregates::call_graph::CallGraph;
 use crate::domain::traits::graph_store::{GraphStore, StoreError};
 use crate::domain::value_objects::CheckpointId;
 use crate::domain::value_objects::file_manifest::FileManifest;
 
+/// The graph the store holds and the identity of the write that put it there.
+#[derive(Debug)]
+struct Head {
+    id: CheckpointId,
+    bytes: Vec<u8>,
+    /// The decoded graph, once somebody asked for it. Lives as long as the
+    /// head, so the snapshot is shared until the next write replaces it.
+    shared: Option<Arc<CallGraph>>,
+}
+
+#[derive(Debug)]
+struct GraphSlot {
+    /// The last id handed out. Survives `clear`, so an id never names two
+    /// different graphs.
+    last_id: CheckpointId,
+    head: Option<Head>,
+}
+
+impl Default for GraphSlot {
+    fn default() -> Self {
+        Self {
+            last_id: CheckpointId::NONE,
+            head: None,
+        }
+    }
+}
+
+impl GraphSlot {
+    fn publish(&mut self, bytes: Vec<u8>) {
+        self.last_id = self.last_id.next();
+        self.head = Some(Head {
+            id: self.last_id,
+            bytes,
+            shared: None,
+        });
+    }
+
+    /// The snapshot of the head, decoded on first use. Bytes that do not
+    /// decode are treated as absent and are not remembered.
+    fn shared_head(&mut self) -> Option<Arc<CallGraph>> {
+        let head = self.head.as_mut()?;
+        if head.shared.is_none() {
+            head.shared = decode_graph(&head.bytes).map(Arc::new);
+        }
+        head.shared.clone()
+    }
+}
+
+fn decode_graph(bytes: &[u8]) -> Option<CallGraph> {
+    bincode::serde::decode_from_slice::<CallGraph, _>(bytes, bincode::config::standard())
+        .ok()
+        .map(|(graph, _)| graph)
+}
+
 /// In-memory implementation of GraphStore for testing
 #[derive(Debug, Default)]
 pub struct InMemoryGraphStore {
-    #[cfg(test)]
-    pub(crate) graph: Mutex<Option<Vec<u8>>>,
-    #[cfg(not(test))]
-    graph: Mutex<Option<Vec<u8>>>,
+    graph: Mutex<GraphSlot>,
     manifest: Mutex<Option<Vec<u8>>>,
 }
 
 impl InMemoryGraphStore {
     /// Create a new in-memory graph store
     pub fn new() -> Self {
-        Self {
-            graph: Mutex::new(None),
-            manifest: Mutex::new(None),
-        }
+        Self::default()
+    }
+
+    fn slot(&self) -> MutexGuard<'_, GraphSlot> {
+        self.graph.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    #[cfg(test)]
+    fn corrupt_graph_bytes(&self) {
+        let mut slot = self.slot();
+        let head = slot.head.as_mut().expect("a graph is held");
+        head.bytes = vec![0xFF, 0x00, 0x01, 0xFE, 0x00];
+        head.shared = None;
     }
 }
 
@@ -41,24 +104,26 @@ impl GraphStore for InMemoryGraphStore {
         use bincode::serde::encode_to_vec;
         let bytes = encode_to_vec(graph, standard())
             .map_err(|e| StoreError::Serialization(e.to_string()))?;
-        *self.graph.lock().unwrap() = Some(bytes);
+        self.slot().publish(bytes);
         Ok(())
     }
 
     fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
-        use bincode::config::standard;
-        use bincode::serde::decode_from_slice;
-        let guard = self.graph.lock().unwrap();
-        match guard.as_ref() {
-            Some(bytes) => {
-                match decode_from_slice::<CallGraph, _>(bytes, standard()) {
-                    Ok((graph, _)) => Ok(Some(graph)),
-                    // Graceful degradation: if data is corrupted, treat as absent
-                    Err(_) => Ok(None),
-                }
-            }
-            None => Ok(None),
-        }
+        // Graceful degradation: if data is corrupted, treat as absent
+        Ok(self
+            .slot()
+            .head
+            .as_ref()
+            .and_then(|head| decode_graph(&head.bytes)))
+    }
+
+    /// The snapshot the store holds, decoded once per write.
+    ///
+    /// Every call between two writes returns the same `Arc`; a write -even
+    /// of an equal graph- replaces it with a new one. Both the snapshot and
+    /// the serialized graph it came from stay in memory.
+    fn load_graph_shared(&self) -> Result<Option<Arc<CallGraph>>, StoreError> {
+        Ok(self.slot().shared_head())
     }
 
     fn save_manifest(&self, manifest: &FileManifest) -> Result<(), StoreError> {
@@ -87,35 +152,32 @@ impl GraphStore for InMemoryGraphStore {
     }
 
     fn clear(&self) -> Result<(), StoreError> {
-        *self.graph.lock().unwrap() = None;
+        self.slot().head = None;
         *self.manifest.lock().unwrap() = None;
         Ok(())
     }
 
     fn exists(&self) -> Result<bool, StoreError> {
-        let graph_exists = self.graph.lock().unwrap().is_some();
+        let graph_exists = self.slot().head.is_some();
         let manifest_exists = self.manifest.lock().unwrap().is_some();
         Ok(graph_exists || manifest_exists)
     }
 
-    // ----- ADR-035: single-version checkpoint stubs -----
-
+    /// The id of the write that put the held graph there: it changes with
+    /// every `save_graph`, is not reused after `clear`, and is `None` while
+    /// the store holds no graph. A manifest alone is not a snapshot.
     fn current_checkpoint_id(&self) -> Option<CheckpointId> {
-        // A single-version store reports id 1 once it holds any data.
-        // Cold store => None (mirrors the CachedGraphStore semantics).
-        if self.exists().unwrap_or(false) {
-            Some(CheckpointId(1))
-        } else {
-            None
-        }
+        self.slot().head.as_ref().map(|head| head.id)
     }
 
+    /// Only the current id is available: the store keeps one snapshot.
     fn checkpoint_at(&self, id: CheckpointId) -> Result<Option<Arc<CallGraph>>, StoreError> {
-        // Only id 1 is valid for a single-version store.
-        if id != CheckpointId(1) {
-            return Err(StoreError::CheckpointNotFound(id));
+        let mut slot = self.slot();
+        match slot.head.as_ref().map(|head| head.id) {
+            None => Ok(None),
+            Some(current) if current == id => Ok(slot.shared_head()),
+            Some(_) => Err(StoreError::CheckpointNotFound(id)),
         }
-        self.load_graph().map(|opt| opt.map(Arc::new))
     }
 }
 
@@ -214,10 +276,7 @@ mod tests {
         assert!(store.load_graph().unwrap().is_some());
 
         // Now corrupt the internal bytes directly
-        {
-            let mut guard = store.graph.lock().unwrap();
-            *guard = Some(vec![0xFF, 0x00, 0x01, 0xFE, 0x00]);
-        }
+        store.corrupt_graph_bytes();
 
         // Loading corrupted data should return Ok(None), not Err
         let result = store.load_graph();
@@ -235,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn test_checkpoint_id_warm_store_is_one() {
+    fn test_checkpoint_id_first_write_is_one() {
         let store = InMemoryGraphStore::new();
         store.save_graph(&create_test_graph()).unwrap();
         assert_eq!(store.current_checkpoint_id(), Some(CheckpointId(1)));

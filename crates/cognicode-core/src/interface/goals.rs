@@ -556,8 +556,27 @@ config\" --max-tokens 800`, `cognicode pack --change-scope staged`.",
     render: pack::render,
 };
 
+/// The `advisories` goal: the resolved Cargo packages of a revision correlated
+/// with a pinned OSV feed.
+pub const ADVISORIES: GoalSpec = GoalSpec {
+    name: "advisories",
+    title: "The resolved Cargo packages of a revision correlated with a pinned OSV feed",
+    description: "Correlate the resolved Cargo packages of a Git revision with an OSV advisory feed the operator supplies as a file in the workspace (`feed`), offline. The feed is never fetched; pin it with `expected_digest` (SHA-256) and bound its age with `max_age_days`. Each package is `affected` (an advisory covers its locked version, with the advisory id, aliases and fixed versions), `not_found_in_scope` (this feed, at this digest, read completely and recent enough, has no advisory covering the version: it is not a statement that the package is safe), `unknown` (a range or version could not be decided, or the feed is partial or stale) or `not_evaluated` (no usable feed, not a crates.io package, or no lockfile). A feed that is absent, unreadable, over the size limit, not matching its pinned digest or not parseable never yields a clean result. The answer carries the feed digest, the revision and the lockfile digest it was computed against, and which ecosystems and how many advisories were considered. A match is an observation, not exploitability, and does not verify the signature or provenance of any artifact; a yanked release is not known. Policy over matches belongs to the consumer. Example: `cognicode advisories --feed osv-snapshot.json --expected-digest sha256:<hex> --max-age-days 30`.",
+    examples: &[
+        "cognicode advisories --feed osv-snapshot.json",
+        "cognicode advisories --feed osv-snapshot.json --expected-digest sha256:<hex> --max-age-days 30 --format json",
+    ],
+    authority: GoalAuthority::Read,
+    minimum_phase: GoalPhase::Analyze,
+    owner: "interface::goals::advisories",
+    requires_graph: false,
+    replaces: &[],
+    run: advisories::run,
+    render: advisories::render,
+};
+
 /// El registro: los goals que este build declara.
-static REGISTRY: [GoalSpec; 16] = [
+static REGISTRY: [GoalSpec; 17] = [
     STATUS,
     CONTEXT,
     FIND,
@@ -574,6 +593,7 @@ static REGISTRY: [GoalSpec; 16] = [
     PREFLIGHT,
     DEPENDENCIES,
     PACK,
+    ADVISORIES,
 ];
 
 /// Los goals declarados, en orden de registro.
@@ -608,6 +628,7 @@ pub fn input_schema(goal: &GoalSpec) -> Map<String, Value> {
         "preflight" => crate::interface::schema::schema_of::<preflight::PreflightInput>(),
         "dependencies" => crate::interface::schema::schema_of::<dependencies::DependenciesInput>(),
         "pack" => crate::interface::schema::schema_of::<pack::PackInput>(),
+        "advisories" => crate::interface::schema::schema_of::<advisories::AdvisoriesInput>(),
         _ => Map::new(),
     }
 }
@@ -854,6 +875,7 @@ pub struct GoalInfo {
     pub arguments: Vec<GoalArgument>,
 }
 
+pub mod advisories;
 pub mod audit;
 pub mod change;
 pub mod common;
