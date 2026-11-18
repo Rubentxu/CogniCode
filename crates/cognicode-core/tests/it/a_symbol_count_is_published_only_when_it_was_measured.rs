@@ -25,6 +25,9 @@
 #![cfg(feature = "persistence")]
 
 use cognicode_core::interface::mcp::handlers::aix_handlers::handle_reparse_on_edit;
+use cognicode_core::interface::mcp::handlers::graph_query_handlers::{
+    GraphQueryInput, handle_graph_query,
+};
 use cognicode_core::interface::mcp::handlers::{
     BuildGraphInput, HandlerContext, handle_build_graph,
 };
@@ -136,6 +139,34 @@ async fn analysed_workspace(functions: usize) -> (tempfile::TempDir, HandlerCont
     );
 
     (workspace, ctx)
+}
+
+#[tokio::test]
+async fn reparse_on_edit_measures_the_replaced_graph_for_graph_query() {
+    let (workspace, ctx) = analysed_workspace(2).await;
+    std::fs::write(
+        workspace.path().join("src/main.rs"),
+        source_with_functions(3),
+    )
+    .expect("the edited source is written");
+
+    reparse(&ctx, "src/main.rs").await;
+    let answer = handle_graph_query(
+        &ctx,
+        GraphQueryInput {
+            question: "funcion_0".into(),
+            max_depth: 3,
+            budget: 1500,
+        },
+    )
+    .await
+    .expect("graph_query answers over the rebuilt graph");
+    let answer = serde_json::to_value(answer).expect("the answer is JSON");
+
+    assert_eq!(
+        answer["coverage"]["status"], "complete",
+        "reparse_on_edit must measure the graph revision it replaced: {answer}"
+    );
 }
 
 #[tokio::test]

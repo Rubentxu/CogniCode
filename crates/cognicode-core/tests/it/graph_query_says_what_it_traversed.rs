@@ -19,11 +19,17 @@
 //! by hand, from the way each edge was added: the test does not ask the code
 //! under test what it should have said.
 
+use cognicode_core::application::analysis_basis::GraphSource;
+use cognicode_core::application::graph_measure::GraphMeasure;
 use cognicode_core::application::graph_snapshot::{load_or_build_graph, source_digest};
+use cognicode_core::application::services::analysis_service::AnalysisService;
+use cognicode_core::application::services::analyze::Coverage;
 use cognicode_core::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use cognicode_core::domain::aggregates::symbol::Symbol;
 use cognicode_core::domain::services::ExtractionContext;
+use cognicode_core::domain::traits::graph_store::GraphStore;
 use cognicode_core::domain::value_objects::{DependencyType, Location, SymbolKind};
+use cognicode_core::infrastructure::persistence::InMemoryGraphStore;
 use cognicode_core::interface::cursor::CursorContext;
 use cognicode_core::interface::hateoas::envelope_for;
 use cognicode_core::interface::mcp::handlers::HandlerContext;
@@ -538,6 +544,39 @@ async fn a_graph_nobody_measured_is_unknown_not_complete() {
     );
 }
 
+#[tokio::test]
+async fn an_injected_store_does_not_reuse_a_measure_from_the_service_graph() {
+    let (_tmp, root) = readable_tree();
+    let service = AnalysisService::new();
+    let measured_graph = typed_graph(false);
+    service.graph_cache().replace(measured_graph.clone());
+    service.graph_measures().record(GraphMeasure::new(
+        service.current_graph_revision(),
+        &measured_graph,
+        Coverage::Complete,
+        GraphSource::Built,
+        "/workspace".into(),
+        None,
+    ));
+
+    let store = InMemoryGraphStore::new();
+    store
+        .save_graph(&measured_graph)
+        .expect("the injected graph is stored");
+    let ctx = HandlerContext::builder()
+        .with_working_dir(&root)
+        .with_analysis_service(service)
+        .with_graph_store(store)
+        .build();
+    let answer = ask(&ctx, "entry", 3, 1500).await;
+
+    assert_eq!(
+        answer["coverage"]["status"], "unknown",
+        "an external store's graph has no measure tied to its identity: {answer}"
+    );
+    assert_eq!(answer["basis"], Value::Null);
+}
+
 /// An answer over a graph with holes says so, names the holes, and the
 /// envelope reads it as partial.
 #[tokio::test]
@@ -651,16 +690,13 @@ async fn a_graph_the_session_already_held_keeps_its_snapshot() {
     assert_eq!(answer["coverage"]["status"], "complete");
 }
 
-/// A graph that replaced the measured one without being measured is not
-/// described by the old coverage.
+/// A direct build records coverage for the graph it replaces.
 #[tokio::test]
-async fn a_graph_that_was_not_the_one_measured_is_unknown() {
+async fn a_direct_build_records_coverage_for_the_replaced_graph() {
     let (_tmp, root) = readable_tree();
     let ctx = HandlerContext::builder().with_working_dir(&root).build();
     load_or_build_graph(ctx.analysis_service(), &root, None, None, false).expect("graph");
 
-    // Another route replaces the graph the service holds, and nobody
-    // measures what it covers.
     let (_other, other_root) = tree_with_an_ambiguous_call();
     ctx.analysis_service()
         .build_project_graph(&other_root)
@@ -668,8 +704,15 @@ async fn a_graph_that_was_not_the_one_measured_is_unknown() {
 
     let answer = ask(&ctx, "caller", 3, 1500).await;
     assert_eq!(
-        answer["coverage"]["status"], "unknown",
-        "the coverage measured for the previous graph is not this graph's: {answer}"
+        answer["coverage"]["status"], "partial",
+        "the graph built from an ambiguous call reports its measured coverage: {answer}"
+    );
+    assert_eq!(
+        answer["coverage"]["pending_references"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
     );
     assert_eq!(answer["basis"], Value::Null);
 }

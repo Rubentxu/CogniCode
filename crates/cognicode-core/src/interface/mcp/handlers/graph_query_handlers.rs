@@ -440,7 +440,8 @@ pub(crate) fn read_the_graph(ctx: &HandlerContext) -> HandlerResult<GraphRead> {
         Err(e) => return Err(HandlerError::Internal(format!("Graph store error: {e}"))),
     };
     let after = service.current_graph_revision();
-    let measure = if before == after {
+    let measure = if before == after && std::sync::Arc::ptr_eq(&service.get_project_graph(), &graph)
+    {
         service.graph_measures().of(after, &graph)
     } else {
         None
