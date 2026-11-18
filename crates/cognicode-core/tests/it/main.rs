@@ -167,6 +167,7 @@ mod project_overview_publishes_the_level_it_delivers;
 mod projection_cache;
 mod provider_conformance;
 mod ranking_order_is_stable_per_snapshot;
+mod read_scope_resolution;
 mod read_set_e2e;
 mod refactor_impact_uses_the_analysis_graph;
 mod refactor_integration_tests;
@@ -176,6 +177,7 @@ mod safety_gate_tests;
 mod scm_changeset_planning;
 
 mod an_sbom_is_read_against_the_fixture_workspace;
+mod detector_submission;
 #[cfg(feature = "evidence-kernel")]
 mod incremental_complete_snapshot;
 mod scm_revision_snapshots;

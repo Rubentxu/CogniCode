@@ -299,6 +299,10 @@ fn the_benchmark_reports_every_phase_and_agrees_across_modes() {
                 assert!(pipeline["phases"][phase]["p50_ms"].is_number(), "{phase}");
             }
             assert!(pipeline["time_to_first_feedback"]["p95_ms"].is_number());
+            assert_eq!(
+                pipeline["schema"],
+                cognicode_core::application::change_tracking::mode_benchmark::PIPELINE_SUMMARY_SCHEMA
+            );
         }
         let warm = &scenario["pipelines"]["incremental_complete.warm"]["cache"];
         assert!(
