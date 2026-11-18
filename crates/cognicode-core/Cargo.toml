@@ -222,6 +222,10 @@ name = "ranking_stats"
 harness = false
 
 [[bench]]
+name = "symbol_search"
+harness = false
+
+[[bench]]
 name = "reparse_benchmarks"
 harness = false
 required-features = ["persistence"]
