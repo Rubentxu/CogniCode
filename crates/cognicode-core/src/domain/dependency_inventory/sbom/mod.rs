@@ -16,7 +16,7 @@ pub mod model;
 
 pub use compare::{
     ArtifactBinding, BindingState, Check, CheckState, ComparisonRequest, DistributionCounts,
-    DistributionFinding, DistributionReport, Expectation, FindingKind, ListedComponent,
+    DistributionFinding, DistributionFindingKind, DistributionReport, Expectation, ListedComponent,
     PackageDistribution, Presence, SubjectResolution, UnmatchedComponent, compare_distribution,
 };
 pub use cyclonedx::parse_cyclonedx;

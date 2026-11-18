@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::dependency_inventory::sbom::FindingKind;
+use crate::domain::dependency_inventory::sbom::DistributionFindingKind;
 use crate::domain::dependency_inventory::{CoverageStatus, SourceFile, UnitInput, inventory_unit};
 use serde_json::{Value, json};
 
@@ -226,7 +226,7 @@ fn a_component_the_lockfile_does_not_resolve_is_reported_never_dropped() {
         report
             .findings
             .iter()
-            .any(|finding| finding.kind == FindingKind::ListedNotResolved)
+            .any(|finding| finding.kind == DistributionFindingKind::ListedNotResolved)
     );
 }
 

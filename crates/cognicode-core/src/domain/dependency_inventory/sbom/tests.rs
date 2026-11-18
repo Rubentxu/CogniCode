@@ -107,7 +107,7 @@ fn compare(unit: &WorkspaceInventory, document: &Value) -> DistributionReport {
     compare_distribution(unit, &parse(document), &ComparisonRequest::default())
 }
 
-fn kinds(report: &DistributionReport) -> Vec<FindingKind> {
+fn kinds(report: &DistributionReport) -> Vec<DistributionFindingKind> {
     report.findings.iter().map(|finding| finding.kind).collect()
 }
 
@@ -359,7 +359,10 @@ fn a_dev_only_package_listed_in_the_sbom_is_a_discrepancy() {
         .push(component("itoa", "1.0.0"));
     let report = compare(&standard_unit(), &doc);
 
-    assert_eq!(kinds(&report), vec![FindingKind::NonShippingListed]);
+    assert_eq!(
+        kinds(&report),
+        vec![DistributionFindingKind::NonShippingListed]
+    );
     assert_eq!(report.findings[0].subject, "itoa@1.0.0");
 }
 
@@ -381,7 +384,7 @@ fn a_shipping_package_marked_excluded_is_a_scope_conflict() {
 
     assert_eq!(
         kinds(&compare(&standard_unit(), &doc)),
-        vec![FindingKind::ScopeConflict]
+        vec![DistributionFindingKind::ScopeConflict]
     );
 }
 
@@ -392,8 +395,8 @@ fn a_direct_dependency_missing_is_required_and_a_transitive_one_is_an_upper_boun
     assert_eq!(
         kinds(&report),
         vec![
-            FindingKind::RequiredNotListed,
-            FindingKind::ReachableNotListed
+            DistributionFindingKind::RequiredNotListed,
+            DistributionFindingKind::ReachableNotListed
         ]
     );
     assert_eq!(report.counts.not_listed, 4);
@@ -415,7 +418,10 @@ fn an_unreachable_package_listed_is_reported() {
     ]);
     let report = compare(&unit, &doc);
 
-    assert_eq!(kinds(&report), vec![FindingKind::ListedNotReachable]);
+    assert_eq!(
+        kinds(&report),
+        vec![DistributionFindingKind::ListedNotReachable]
+    );
 }
 
 #[test]
@@ -428,7 +434,10 @@ fn a_different_origin_or_hash_is_a_mismatch() {
 
     assert_eq!(
         kinds(&report),
-        vec![FindingKind::OriginMismatch, FindingKind::DigestMismatch]
+        vec![
+            DistributionFindingKind::OriginMismatch,
+            DistributionFindingKind::DigestMismatch
+        ]
     );
     assert_eq!(report.counts.origin_differs, 1);
     assert_eq!(report.counts.digest_differs, 1);
@@ -465,7 +474,10 @@ fn two_different_components_for_one_package_are_ambiguous() {
     ]);
     let report = compare(&standard_unit(), &doc);
 
-    assert_eq!(kinds(&report), vec![FindingKind::AmbiguousMatch]);
+    assert_eq!(
+        kinds(&report),
+        vec![DistributionFindingKind::AmbiguousMatch]
+    );
     assert_eq!(row(&report, "serde@1.0.5").presence, Presence::Ambiguous);
     assert_eq!(report.counts.ambiguous, 1);
 }
@@ -521,8 +533,8 @@ fn one_version_of_two_locked_is_listed_and_the_other_is_not() {
     assert_eq!(
         kinds(&report),
         vec![
-            FindingKind::ReachableNotListed,
-            FindingKind::ListedNotResolved
+            DistributionFindingKind::ReachableNotListed,
+            DistributionFindingKind::ListedNotResolved
         ]
     );
     let stray = report.unmatched.first().expect("unmatched");
@@ -554,7 +566,7 @@ fn a_source_stage_sbom_is_not_a_distribution() {
     doc["metadata"]["lifecycles"] = json!([{"phase": "pre-build"}]);
     let report = compare(&standard_unit(), &doc);
 
-    assert!(kinds(&report).contains(&FindingKind::SourceStage));
+    assert!(kinds(&report).contains(&DistributionFindingKind::SourceStage));
     assert_eq!(report.layer().status, CoverageStatus::NotCollected);
 }
 
@@ -579,7 +591,7 @@ fn a_subject_that_is_not_a_member_leaves_shipping_unassessed() {
         report.subject,
         SubjectResolution::Unresolved { .. }
     ));
-    assert!(kinds(&report).contains(&FindingKind::SubjectUnresolved));
+    assert!(kinds(&report).contains(&DistributionFindingKind::SubjectUnresolved));
     assert_eq!(
         row(&report, "serde@1.0.5").expectation,
         Expectation::Unassessed
@@ -600,7 +612,7 @@ fn a_subject_version_that_differs_from_the_member_is_reported() {
 
     assert_eq!(
         kinds(&compare(&standard_unit(), &doc)),
-        vec![FindingKind::SubjectVersionDiffers]
+        vec![DistributionFindingKind::SubjectVersionDiffers]
     );
 }
 
@@ -632,7 +644,7 @@ fn the_sbom_is_bound_to_an_artifact_digest_only_through_its_subject_hash() {
     );
     let other = state(&doc, Some(SUM));
     assert_eq!(other.artifact_binding.state, BindingState::Differs);
-    assert!(kinds(&other).contains(&FindingKind::ArtifactDigestMismatch));
+    assert!(kinds(&other).contains(&DistributionFindingKind::ArtifactDigestMismatch));
 }
 
 #[test]
@@ -665,7 +677,7 @@ fn a_git_origin_agrees_by_repository_and_commit_prefix() {
 
     let moved =
         listed("pkg:cargo/fork@0.1.0?vcs_url=git%2Bhttps://g.example/fork%40deadbeefdeadbeef");
-    assert_eq!(kinds(&moved), vec![FindingKind::OriginMismatch]);
+    assert_eq!(kinds(&moved), vec![DistributionFindingKind::OriginMismatch]);
 
     let bare = listed("pkg:cargo/fork@0.1.0");
     assert_eq!(

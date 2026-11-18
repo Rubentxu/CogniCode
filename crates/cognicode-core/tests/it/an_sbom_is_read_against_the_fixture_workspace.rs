@@ -12,7 +12,8 @@ use cognicode_core::application::artifact_sbom::{
     distribute,
 };
 use cognicode_core::domain::dependency_inventory::sbom::{
-    BindingState, DistributionReport, FindingKind, SbomLimits, SbomStage, SubjectResolution,
+    BindingState, DistributionFindingKind, DistributionReport, SbomLimits, SbomStage,
+    SubjectResolution,
 };
 use cognicode_core::domain::dependency_inventory::{
     CoverageStatus, DependencyLayer, SourceFile, UnitInput, WorkspaceInventory, inventory_unit,
@@ -75,7 +76,7 @@ fn report(answer: &DistributionAnswer) -> &DistributionReport {
     unit.report.as_ref().expect("a report")
 }
 
-fn kinds(report: &DistributionReport) -> Vec<FindingKind> {
+fn kinds(report: &DistributionReport) -> Vec<DistributionFindingKind> {
     let mut kinds: Vec<_> = report.findings.iter().map(|f| f.kind).collect();
     kinds.sort_by_key(|kind| format!("{kind:?}"));
     kinds
@@ -129,7 +130,7 @@ fn the_guard_export_lists_the_dev_and_build_packages_it_cannot_tell_apart() {
     let flagged: Vec<&str> = report
         .findings
         .iter()
-        .filter(|finding| finding.kind == FindingKind::NonShippingListed)
+        .filter(|finding| finding.kind == DistributionFindingKind::NonShippingListed)
         .map(|finding| finding.subject.as_str())
         .collect();
     assert_eq!(flagged.len(), 2, "{:?}", report.findings);
@@ -154,9 +155,9 @@ fn an_external_artifact_sbom_is_bound_by_its_subject_and_reports_each_disagreeme
 
     let found = kinds(report);
     for expected in [
-        FindingKind::DigestMismatch,
-        FindingKind::ListedNotResolved,
-        FindingKind::NonShippingListed,
+        DistributionFindingKind::DigestMismatch,
+        DistributionFindingKind::ListedNotResolved,
+        DistributionFindingKind::NonShippingListed,
     ] {
         assert!(found.contains(&expected), "{expected:?} in {found:?}");
     }
@@ -175,8 +176,8 @@ fn without_naming_the_member_an_external_subject_is_unresolved_never_guessed() {
         report.subject,
         SubjectResolution::Unresolved { .. }
     ));
-    assert!(kinds(report).contains(&FindingKind::SubjectUnresolved));
-    assert!(!kinds(report).contains(&FindingKind::RequiredNotListed));
+    assert!(kinds(report).contains(&DistributionFindingKind::SubjectUnresolved));
+    assert!(!kinds(report).contains(&DistributionFindingKind::RequiredNotListed));
 }
 
 #[test]
@@ -188,7 +189,7 @@ fn another_artifact_digest_is_a_mismatch_and_a_pinned_digest_is_checked_on_the_b
         report(&answer).artifact_binding.state,
         BindingState::Differs
     );
-    assert!(kinds(report(&answer)).contains(&FindingKind::ArtifactDigestMismatch));
+    assert!(kinds(report(&answer)).contains(&DistributionFindingKind::ArtifactDigestMismatch));
 
     let mut pinned = query("external-image.cdx.json", Some("app"));
     pinned.expected_digest = Some(ContentDigest::from_bytes(&sbom("external-image.cdx.json")));

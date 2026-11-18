@@ -159,7 +159,7 @@ pub struct UnmatchedComponent {
 /// The kinds of discrepancy between the SBOM and the inventory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FindingKind {
+pub enum DistributionFindingKind {
     /// The document states a source stage: it describes what manifests ask
     /// for, not what was shipped.
     SourceStage,
@@ -201,7 +201,7 @@ pub enum FindingKind {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct DistributionFinding {
     /// What kind of discrepancy.
-    pub kind: FindingKind,
+    pub kind: DistributionFindingKind,
     /// The package, component or document it is about.
     pub subject: String,
     /// What exactly differs.
@@ -641,7 +641,11 @@ struct Judged {
     findings: Vec<DistributionFinding>,
 }
 
-fn finding(kind: FindingKind, subject: &str, detail: impl Into<String>) -> DistributionFinding {
+fn finding(
+    kind: DistributionFindingKind,
+    subject: &str,
+    detail: impl Into<String>,
+) -> DistributionFinding {
     DistributionFinding {
         kind,
         subject: subject.to_string(),
@@ -664,20 +668,28 @@ fn judge_listed(
         .as_ref()
         .filter(|_| origin.state == CheckState::Differs)
     {
-        findings.push(finding(FindingKind::OriginMismatch, &package.id, detail));
+        findings.push(finding(
+            DistributionFindingKind::OriginMismatch,
+            &package.id,
+            detail,
+        ));
     }
     if let Some(detail) = digest
         .detail
         .as_ref()
         .filter(|_| digest.state == CheckState::Differs)
     {
-        findings.push(finding(FindingKind::DigestMismatch, &package.id, detail));
+        findings.push(finding(
+            DistributionFindingKind::DigestMismatch,
+            &package.id,
+            detail,
+        ));
     }
     let kinds: Vec<&str> = reach.kinds.iter().map(|kind| kind.table()).collect();
     match expectation {
         Expectation::NonShipping if component.scope != ComponentScope::Excluded => {
             findings.push(finding(
-                FindingKind::NonShippingListed,
+                DistributionFindingKind::NonShippingListed,
                 &package.id,
                 format!(
                     "listed in the SBOM but reachable from the subject only through {}",
@@ -686,13 +698,13 @@ fn judge_listed(
             ));
         }
         Expectation::NotReachable => findings.push(finding(
-            FindingKind::ListedNotReachable,
+            DistributionFindingKind::ListedNotReachable,
             &package.id,
             "listed in the SBOM but no declaration of the subject reaches it",
         )),
         Expectation::Shipping if component.scope == ComponentScope::Excluded => {
             findings.push(finding(
-                FindingKind::ScopeConflict,
+                DistributionFindingKind::ScopeConflict,
                 &package.id,
                 "the SBOM marks it excluded, yet the subject reaches it through a normal dependency",
             ));
@@ -739,7 +751,7 @@ fn judge_absent(
                 })
                 .collect();
             findings.push(finding(
-                FindingKind::AmbiguousMatch,
+                DistributionFindingKind::AmbiguousMatch,
                 &package.id,
                 format!(
                     "{} components could stand for it and nothing tells which: {}",
@@ -750,13 +762,13 @@ fn judge_absent(
         }
         _ if expectation == Expectation::Shipping && reach.unconditional_direct => {
             findings.push(finding(
-                FindingKind::RequiredNotListed,
+                DistributionFindingKind::RequiredNotListed,
                 &package.id,
                 "a direct dependency of the subject that the SBOM does not list",
             ));
         }
         _ if expectation == Expectation::Shipping => findings.push(finding(
-            FindingKind::ReachableNotListed,
+            DistributionFindingKind::ReachableNotListed,
             &package.id,
             "reachable from the subject but not listed; the lockfile spans every target and feature, so the artifact may legitimately omit it",
         )),
@@ -917,7 +929,7 @@ pub fn compare_distribution(
             .clone()
             .unwrap_or_else(|| component.name.clone());
         findings.push(finding(
-            FindingKind::ListedNotResolved,
+            DistributionFindingKind::ListedNotResolved,
             &label,
             reason.clone(),
         ));
@@ -960,12 +972,12 @@ fn stage_findings(
         .unwrap_or_else(|| "the document".to_string());
     match sbom.stage {
         SbomStage::Source => findings.push(finding(
-            FindingKind::SourceStage,
+            DistributionFindingKind::SourceStage,
             &document,
             "the SBOM states a pre-build stage: it lists what manifests ask for, not what was shipped",
         )),
         SbomStage::Ambiguous => findings.push(finding(
-            FindingKind::StageAmbiguous,
+            DistributionFindingKind::StageAmbiguous,
             &document,
             "the SBOM states both source and artifact lifecycle phases",
         )),
@@ -974,7 +986,7 @@ fn stage_findings(
     match subject {
         SubjectResolution::Unresolved { reason } => {
             findings.push(finding(
-                FindingKind::SubjectUnresolved,
+                DistributionFindingKind::SubjectUnresolved,
                 &document,
                 reason.clone(),
             ));
@@ -985,7 +997,7 @@ fn stage_findings(
                 && claimed != actual
             {
                 findings.push(finding(
-                    FindingKind::SubjectVersionDiffers,
+                    DistributionFindingKind::SubjectVersionDiffers,
                     name,
                     format!(
                         "the SBOM describes version {claimed}, the revision has {actual} in {}",
@@ -997,7 +1009,7 @@ fn stage_findings(
     }
     if binding.state == BindingState::Differs {
         findings.push(finding(
-            FindingKind::ArtifactDigestMismatch,
+            DistributionFindingKind::ArtifactDigestMismatch,
             &document,
             "the SBOM states SHA-256 hashes for its subject and none is the artifact digest given",
         ));
