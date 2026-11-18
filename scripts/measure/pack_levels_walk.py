@@ -46,6 +46,10 @@ CALLERS = [f"caller_{i}" for i in range(12)]
 # apunta a otra no puede encadenar sin fin.
 MAX_FOLLOWS = 3
 
+# Plazo de cada llamada a git: un comando que no responde deja la medicion
+# colgada sin decir quien se colgo.
+GIT_DEADLINE_SECONDS = 120
+
 
 def _harness():
     spec = importlib.util.spec_from_file_location("harness_ab", HERE / "harness_ab.py")
@@ -83,7 +87,13 @@ def build_fixture(project: Path) -> None:
         ["git", "add", "-A"],
         ["git", "-c", "user.name=m", "-c", "user.email=m@example.com", "commit", "-qm", "chore: fixture"],
     ):
-        subprocess.run(command, cwd=project, check=True, capture_output=True)
+        subprocess.run(
+            command,
+            cwd=project,
+            check=True,
+            capture_output=True,
+            timeout=GIT_DEADLINE_SECONDS,
+        )
 
 
 TASKS = [
@@ -162,7 +172,11 @@ def pack_links(client: Any, task: dict[str, Any]) -> dict[str, Any]:
 
 def files(project: Path, task: dict[str, Any]) -> dict[str, Any]:
     listing = subprocess.run(
-        ["git", "grep", "-l", "-w", task["grep"]], cwd=project, capture_output=True, text=True
+        ["git", "grep", "-l", "-w", task["grep"]],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        timeout=GIT_DEADLINE_SECONDS,
     )
     paths = [line for line in listing.stdout.splitlines() if line]
     text = "".join((project / path).read_text(encoding="utf-8") for path in paths)
