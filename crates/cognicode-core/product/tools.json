@@ -10858,20 +10858,43 @@
       "input_schema": {
         "description": "Input for the `trace` goal",
         "properties": {
+          "budget": {
+            "description": "Spend at most this many fact visits (one per edge examined). A trace\nthat reaches the ceiling stops and says it is partial.",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "depth": {
             "default": 1,
-            "description": "How many hops to follow",
+            "description": "How many hops to follow (at least 1)",
             "minimum": 0,
             "type": "integer"
           },
           "direction": {
             "default": "both",
-            "description": "Which side to follow: `callers`, `callees` or `both`",
+            "description": "Which side to follow: `callers`, `callees`, `both`, `implementors`,\n`contracts` or `dependents`",
             "type": "string"
+          },
+          "module": {
+            "description": "List only the symbols declared in this module (a directory, matched\nby path suffix). It restricts what is listed, not what is followed.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "symbol": {
             "description": "The name of the symbol to trace",
             "type": "string"
+          },
+          "top_k": {
+            "description": "List only the best `top_k` neighbours: nearest first, then the most\ntrusted edge",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [

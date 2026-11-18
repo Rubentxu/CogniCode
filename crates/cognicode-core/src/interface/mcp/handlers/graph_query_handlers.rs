@@ -8,8 +8,11 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::application::graph_measure::GraphMeasure;
+use crate::application::services::graph_operators::{
+    QueryError, Relation, Target, TypedQuery, run, symbols_named,
+};
 use crate::application::services::graph_queries::{
-    CommunityDetection, CommunitySection, community_callflow,
+    CommunityDetection, CommunitySection, GraphQueryError, community_callflow,
 };
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::{Provenance, SymbolKind, published_line};
@@ -221,13 +224,7 @@ fn seeds_of(graph: &CallGraph, keywords: &[String]) -> Vec<(SymbolId, Vec<String
     let mut seeds: Vec<(SymbolId, Vec<String>)> = Vec::new();
     let mut position: HashMap<String, usize> = HashMap::new();
     for keyword in keywords {
-        let mut ids: Vec<SymbolId> = graph
-            .find_by_name(keyword)
-            .into_iter()
-            .map(|symbol| SymbolId::new(symbol.fully_qualified_name()))
-            .collect();
-        ids.sort();
-        for id in ids {
+        for id in symbols_named(graph, keyword) {
             match position.get(id.as_str()) {
                 Some(&at) => seeds[at].1.push(keyword.clone()),
                 None => {
@@ -937,36 +934,48 @@ pub async fn handle_get_implementors(
         _ => return Err(HandlerError::Internal("No graph available".into())),
     };
 
-    let candidates = graph.find_by_name(&input.trait_name);
-    let trait_sym = candidates.first().ok_or_else(|| {
-        HandlerError::NotFound(format!("Trait/interface '{}' not found", input.trait_name))
-    })?;
-
-    let trait_id = SymbolId::new(trait_sym.fully_qualified_name());
-    let mut implementors = Vec::new();
-
-    // Find all symbols that have an Inherits edge pointing to this trait
-    for (dep_id, _) in graph.symbol_ids() {
-        for (target_id, dep_type, _prov, _conf) in graph.dependencies_with_metadata(dep_id) {
-            if target_id == &trait_id
-                && matches!(
-                    dep_type,
-                    crate::domain::value_objects::DependencyType::Inherits
-                )
-            {
-                if let Some(impl_sym) = graph.get_symbol(dep_id) {
-                    implementors.push(impl_sym.name().to_string());
-                }
-                break;
-            }
-        }
-    }
-
-    let summary = format!(
-        "{} implementors of {}",
-        implementors.len(),
-        input.trait_name
+    // The question has one owner. A name that several symbols carry is not
+    // a question about whichever came first: the answer lists nothing and
+    // its summary says which declarations share the name.
+    let query = TypedQuery::new(
+        Target::Name(input.trait_name.clone()),
+        vec![Relation::Implementors],
     );
+    let (implementors, summary) = match run(&graph, &query, None) {
+        Ok(answer) => {
+            let mut rows = answer.rows;
+            rows.sort_by(|a, b| a.id.cmp(&b.id));
+            let implementors: Vec<String> = rows
+                .iter()
+                .filter_map(|row| graph.get_symbol(&row.id))
+                .map(|symbol| symbol.name().to_string())
+                .collect();
+            let summary = format!(
+                "{} implementors of {}",
+                implementors.len(),
+                input.trait_name
+            );
+            (implementors, summary)
+        }
+        Err(QueryError::Graph(GraphQueryError::Ambiguous { name, candidates })) => (
+            Vec::new(),
+            format!(
+                "0 implementors listed: `{name}` is declared {} times ({}) and none was picked",
+                candidates.len(),
+                candidates.join(", ")
+            ),
+        ),
+        Err(QueryError::Graph(GraphQueryError::NotFound { .. })) => {
+            return Err(HandlerError::NotFound(format!(
+                "Trait/interface '{}' not found",
+                input.trait_name
+            )));
+        }
+        Err(QueryError::Invalid(invalid)) => {
+            return Err(HandlerError::InvalidInput(invalid.to_string()));
+        }
+    };
+
     Ok(GetImplementorsOutput {
         trait_name: input.trait_name,
         implementors,

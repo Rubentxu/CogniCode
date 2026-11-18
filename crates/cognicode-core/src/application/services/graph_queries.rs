@@ -35,7 +35,11 @@
 
 use std::collections::VecDeque;
 
+use crate::application::change_tracking::scheduling::CostEstimator;
 use crate::application::services::analysis_service::AnalysisService;
+use crate::application::services::graph_operators::{
+    Explain, QueryError, Relation, Target, TypedQuery, run,
+};
 use crate::domain::aggregates::Symbol;
 use crate::domain::aggregates::call_graph::{CallGraph, MermaidOptions, SymbolId};
 use crate::domain::services::resolve_target;
@@ -262,7 +266,9 @@ pub fn trace_paths(
 ///
 /// The walk is breadth-first from the symbol the name means, up to
 /// `depth` hops. The root itself is not an entry: the answer is about
-/// the neighbours, not about the symbol that was asked about.
+/// the neighbours, not about the symbol that was asked about. The walk is
+/// the one the typed read operators run, so a hierarchy and a typed query
+/// over the same relations read the graph the same way.
 pub fn hierarchy(
     graph: &CallGraph,
     symbol: &str,
@@ -270,50 +276,89 @@ pub fn hierarchy(
     direction: Direction,
 ) -> Result<Vec<HierarchyEntry>, GraphQueryError> {
     let root = resolve(graph, symbol)?;
-    let mut entries: Vec<HierarchyEntry> = Vec::new();
-    let mut visited: std::collections::HashSet<SymbolId> = std::collections::HashSet::new();
-    visited.insert(root.clone());
-
-    let mut frontier: Vec<SymbolId> = vec![root];
-    for level in 1..=depth {
-        let mut next: Vec<SymbolId> = Vec::new();
-        for symbol_id in &frontier {
-            if direction != Direction::Callees {
-                for caller_id in graph.callers(symbol_id) {
-                    if visited.insert(caller_id.clone())
-                        && let Some(caller) = graph.get_symbol(&caller_id)
-                    {
-                        entries.push(hierarchy_entry(caller, level, Direction::Callers));
-                        next.push(caller_id);
-                    }
-                }
-            }
-            if direction != Direction::Callers {
-                for (callee_id, _) in graph.callees(symbol_id) {
-                    if visited.insert(callee_id.clone())
-                        && let Some(callee) = graph.get_symbol(&callee_id)
-                    {
-                        entries.push(hierarchy_entry(callee, level, Direction::Callees));
-                        next.push(callee_id);
-                    }
-                }
-            }
-        }
-        if next.is_empty() {
-            break;
-        }
-        frontier = next;
+    if depth == 0 {
+        return Ok(Vec::new());
     }
+    let relations = match direction {
+        Direction::Callers => vec![Relation::Callers],
+        Direction::Callees => vec![Relation::Callees],
+        Direction::Both => vec![Relation::Callers, Relation::Callees],
+    };
+    let query = TypedQuery::new(Target::Id(root), relations).with_depth(depth);
+    let (neighbours, _) = neighbours(graph, &query, None).map_err(|error| match error {
+        QueryError::Graph(error) => error,
+        QueryError::Invalid(invalid) => {
+            unreachable!("a hierarchy builds a valid query by construction: {invalid}")
+        }
+    })?;
+    Ok(neighbours
+        .into_iter()
+        .map(|neighbour| HierarchyEntry {
+            name: neighbour.name,
+            file: neighbour.file,
+            line: neighbour.line,
+            column: neighbour.column,
+            depth: neighbour.depth,
+            direction: match neighbour.relation {
+                Relation::Callers => Direction::Callers,
+                _ => Direction::Callees,
+            },
+        })
+        .collect())
+}
 
-    entries.sort_by(|a, b| {
+/// A symbol a typed query reached, as a surface publishes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Neighbour {
+    pub name: String,
+    pub file: String,
+    /// The line, as published (counted from one).
+    pub line: u32,
+    /// The column, as published (counted from one).
+    pub column: u32,
+    /// How far from the target the symbol was first reached.
+    pub depth: u32,
+    /// The relation that reached it.
+    pub relation: Relation,
+}
+
+/// The symbols a typed query reaches, in the order surfaces publish them
+/// (nearest first, then by relation, name, file and line), and the account
+/// of how the query found them.
+///
+/// Which symbols are listed is the query's decision (filter, top-k,
+/// budget); the order they are published in is not, so a surface that
+/// asks for the five best still publishes them the way it publishes all.
+pub fn neighbours(
+    graph: &CallGraph,
+    query: &TypedQuery,
+    estimator: Option<&CostEstimator>,
+) -> Result<(Vec<Neighbour>, Explain), QueryError> {
+    let answer = run(graph, query, estimator)?;
+    let mut neighbours: Vec<Neighbour> = answer
+        .rows
+        .iter()
+        .filter_map(|row| {
+            let symbol = graph.get_symbol(&row.id)?;
+            Some(Neighbour {
+                name: symbol.name().to_string(),
+                file: symbol.location().file().to_string(),
+                line: published_line(symbol.location().line()),
+                column: published_column(symbol.location().column()),
+                depth: row.depth,
+                relation: row.relation,
+            })
+        })
+        .collect();
+    neighbours.sort_by(|a, b| {
         a.depth
             .cmp(&b.depth)
-            .then_with(|| a.direction.as_str().cmp(b.direction.as_str()))
+            .then_with(|| a.relation.as_str().cmp(b.relation.as_str()))
             .then_with(|| a.name.cmp(&b.name))
             .then_with(|| a.file.cmp(&b.file))
             .then_with(|| a.line.cmp(&b.line))
     });
-    Ok(entries)
+    Ok((neighbours, answer.explain))
 }
 
 /// The project as a Mermaid diagram.
@@ -584,17 +629,6 @@ fn all_paths(
     }
 
     paths
-}
-
-fn hierarchy_entry(symbol: &Symbol, depth: u32, direction: Direction) -> HierarchyEntry {
-    HierarchyEntry {
-        name: symbol.name().to_string(),
-        file: symbol.location().file().to_string(),
-        line: published_line(symbol.location().line()),
-        column: published_column(symbol.location().column()),
-        depth,
-        direction,
-    }
 }
 
 /// The service the surfaces ask.
