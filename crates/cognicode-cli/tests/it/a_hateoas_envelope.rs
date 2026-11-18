@@ -342,6 +342,156 @@ fn a_pack_with_a_stale_omission_offers_the_reindex() {
     assert!(envelope.links.iter().all(|link| link.rel != "reindex"));
 }
 
+/// A delivered `pack` with the facts of what expanding its symbols reaches.
+fn pack_with_reach(callers: u64) -> Value {
+    json!({
+        "status": "partial",
+        "summary": "1 of 1 candidate",
+        "items": [{
+            "id": "src/lib.rs:leaf:1",
+            "name": "leaf",
+            "file": "src/lib.rs",
+            "range": {"start_line": 1, "end_line": 3},
+            "range_basis": "declaration"
+        }],
+        "omissions": [{"id": "src/lib.rs:gone:9", "reason": "source_changed"}],
+        "navigation": {
+            "reach": [{
+                "id": "src/lib.rs:leaf:1",
+                "range_lines": 3,
+                "direct_callers": callers,
+                "direct_callees": 0
+            }],
+            "advisory": {"verdict": "may_stop", "basis": "advisory", "gaps": [], "limits": []}
+        }
+    })
+}
+
+/// A `pack` opens the levels of knowledge from its first symbol, with the
+/// level and the evidence named in each reason.
+#[test]
+fn a_pack_opens_the_levels_of_knowledge_from_its_first_symbol() {
+    let envelope = envelope_for("pack", &Map::new(), &pack_with_reach(2), &context());
+
+    let range = link_with(&envelope, "read-range");
+    assert_eq!(range.tool, "read_file");
+    assert_eq!(range.required_args["path"], json!("src/lib.rs"));
+    assert_eq!(range.required_args["start_line"], json!(1));
+    assert_eq!(range.required_args["end_line"], json!(3));
+    assert!(range.reason.starts_with("L0 (fact)"), "{}", range.reason);
+
+    let contract = link_with(&envelope, "inspect-contract");
+    assert_eq!(contract.tool, "inspect");
+    assert_eq!(contract.required_args["file"], json!("src/lib.rs"));
+    assert!(contract.reason.starts_with("L1 (fact)"));
+
+    let consumers = link_with(&envelope, "trace-consumers");
+    assert_eq!(consumers.tool, "trace");
+    assert_eq!(
+        consumers.required_args["symbol"],
+        json!("src/lib.rs:leaf:1")
+    );
+    assert_eq!(consumers.required_args["direction"], json!("callers"));
+    assert!(consumers.reason.starts_with("L2 (fact)") && consumers.reason.contains("2 direct"));
+
+    for (rel, tool) in [
+        ("inspect-component", "graph_communities"),
+        ("inspect-overview", "overview"),
+    ] {
+        let upper = link_with(&envelope, rel);
+        assert_eq!(upper.tool, tool);
+        assert!(
+            upper.reason.contains("(inferred)"),
+            "an upper level is an inference and says so: {}",
+            upper.reason
+        );
+    }
+}
+
+/// The links of a `pack` are reads: following them widens nothing.
+#[test]
+fn the_levels_of_a_pack_are_all_reads() {
+    let envelope = envelope_for("pack", &Map::new(), &pack_with_reach(2), &context());
+    let navigation: Vec<_> = envelope
+        .links
+        .iter()
+        .filter(|link| {
+            [
+                "read-range",
+                "inspect-contract",
+                "trace-consumers",
+                "inspect-component",
+                "inspect-overview",
+            ]
+            .contains(&link.rel.as_str())
+        })
+        .collect();
+    assert_eq!(navigation.len(), 5);
+    assert!(navigation.iter().all(|link| link.authority == "read"));
+}
+
+/// Only what the answer measured is offered: no consumers, no link to them;
+/// no reach, no navigation; and the omitted symbol is never a target.
+#[test]
+fn a_pack_offers_only_the_levels_it_measured() {
+    let none = envelope_for("pack", &Map::new(), &pack_with_reach(0), &context());
+    assert!(none.links.iter().all(|link| link.rel != "trace-consumers"));
+    assert!(none.links.iter().any(|link| link.rel == "read-range"));
+
+    let mut unmeasured = pack_with_reach(2);
+    unmeasured["navigation"]["reach"] = json!([]);
+    let envelope = envelope_for("pack", &Map::new(), &unmeasured, &context());
+    assert!(
+        envelope
+            .links
+            .iter()
+            .all(|link| link.tool != "read_file" && link.tool != "trace" && link.tool != "inspect")
+    );
+
+    let omitted_only = json!({
+        "status": "partial", "summary": "s", "items": [],
+        "omissions": [{"id": "src/lib.rs:gone:9", "reason": "source_changed"}],
+        "navigation": {"reach": [], "advisory": {"verdict": "keep_going", "basis": "advisory", "gaps": [], "limits": []}}
+    });
+    let envelope = envelope_for("pack", &Map::new(), &omitted_only, &context());
+    assert!(
+        envelope
+            .links
+            .iter()
+            .all(|link| !["read_file", "trace", "inspect"].contains(&link.tool.as_str())),
+        "a symbol whose source changed is not a target: only the reindex is offered"
+    );
+    assert!(envelope.links.iter().any(|link| link.rel == "reindex"));
+}
+
+/// Another tool's answer with a `navigation` key is not a pack.
+#[test]
+fn the_levels_belong_to_the_pack_alone() {
+    let envelope = envelope_for("trace", &Map::new(), &pack_with_reach(2), &context());
+    assert!(envelope.links.iter().all(|link| link.rel != "read-range"));
+}
+
+/// The handle of the consumers link goes stale with its snapshot, and is
+/// refused with a typed error until the answer is asked again.
+#[test]
+fn the_consumers_handle_is_stale_on_another_snapshot() {
+    let envelope = envelope_for("pack", &Map::new(), &pack_with_reach(2), &context());
+    let handle = link_with(&envelope, "trace-consumers")
+        .handle
+        .clone()
+        .expect("the consumers link carries a handle");
+
+    let verified = verify_handle(&handle, &context()).expect("the same snapshot verifies");
+    assert_eq!(verified.kind, HandleKind::Sym);
+
+    let rebuilt = HandleContext {
+        workspace: "/repo".to_string(),
+        snapshot: "snap-2".to_string(),
+    };
+    let error = verify_handle(&handle, &rebuilt).expect_err("another snapshot is refused");
+    assert_eq!(error.kind, CursorErrorKind::SnapshotExpired);
+}
+
 /// Una respuesta que lista una muestra declara el total aparte: el sobre
 /// cuenta el total, no la muestra.
 #[test]

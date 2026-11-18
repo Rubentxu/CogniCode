@@ -102,3 +102,28 @@ función dentro de una macro (`assert_eq!(f(), ..)`) no tienen arista de llamada
 y el lector de Rust no publica la relación `impl Trait for Tipo` como
 `Inherits`, así que en `contract-implementor` el contrato y sus consumidores
 indirectos no llegan.
+
+## Navegar los niveles desde un `pack`
+
+`pack_levels_walk.py` abre una sesión MCP real (`--profile full`) sobre un
+fixture con `hub` y doce llamantes en cuatro ficheros, y para una tarea de
+arquitectura («quién depende de `hub`») y una de fallo («lee el código de
+`hub`») compara tres brazos: `pack_only` (una llamada), `pack_links` (el
+`pack` y solo los enlaces `_links` del nivel que la tarea necesita, con los
+argumentos que traen) y `files` (`git grep -l -w` y leer entero cada fichero
+que casa). Por brazo: llamadas, bytes que lee el agente y éxito contra la
+verdad terreno (cada hecho como palabra completa, solo en lo entregado), más
+la autoridad de cada enlace seguido (`widened` vacío = ningún enlace ensancha
+permisos) y el consejo de parada del `pack`.
+
+```sh
+cargo build -p cognicode-mcp
+python3 -I scripts/measure/pack_levels_walk.py \
+  --binary <target>/debug/cognicode-mcp --out /tmp/pack-levels-walk.json
+```
+
+Límites: la política de seguimiento es determinista (no es un agente), el
+fixture es diminuto (un fichero entero cuesta menos bytes que la respuesta de
+un `pack`, que lleva envoltorio, enlaces y evidencia), los bytes no se
+convierten en tokens, una sola pasada, host compartido (se guarda la carga) y
+no es el baseline de recuperación real del Context Pack.

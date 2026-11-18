@@ -32,6 +32,11 @@ KNOWN_RELS = (
     "inspect-risk",
     "preview-change",
     "retry",
+    "read-range",
+    "inspect-contract",
+    "trace-consumers",
+    "inspect-component",
+    "inspect-overview",
 )
 
 # Ofertas minimas para que una tasa cero cuente como evidencia.

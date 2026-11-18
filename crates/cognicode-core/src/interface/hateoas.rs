@@ -32,13 +32,17 @@
 //! Un enlace que nombra una tool que este build no anuncia no se publica:
 //! un enlace muerto es peor que no tener enlaces.
 //!
-//! Los siete casos que producen un enlace: la **ambigüedad** (una
+//! Los casos que producen un enlace: la **ambigüedad** (una
 //! referencia que declara un nombre que varios símbolos llevan), el
 //! **recorte** (la respuesta dice que está cortada), el **fan-in alto**
 //! (muchos dependen de un símbolo), la **cobertura parcial** (la respuesta
 //! deja agujeros), el **riesgo** (la respuesta dice que el riesgo es alto), el
 //! **plan de cambio** (la respuesta propone cambiar algo) y el **reintento**
-//! (un paso de la receta falló).
+//! (un paso de la receta falló). Un `pack` abre además la navegación por
+//! niveles de conocimiento desde su primer símbolo —el rango, el fichero,
+//! los consumidores, la comunidad y el proyecto—: los tres primeros son
+//! hechos del grafo y de la fuente, y los dos de arriba son inferencias y el
+//! enlace lo dice.
 //!
 //! ## Los handles
 //!
@@ -174,8 +178,10 @@ pub struct Budget {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Link {
     /// Qué clase de enlace es: `resolve-ambiguity`, `continue`,
-    /// `inspect-callers`, `reindex`, `inspect-risk`, `preview-change` o
-    /// `retry`.
+    /// `inspect-callers`, `reindex`, `inspect-risk`, `preview-change`,
+    /// `retry` o, para bajar y subir por los niveles de conocimiento desde
+    /// un `pack`, `read-range`, `inspect-contract`, `trace-consumers`,
+    /// `inspect-component` e `inspect-overview`.
     pub rel: String,
 
     /// La tool que responde al enlace.
@@ -403,7 +409,130 @@ fn links_for(
     ]
     .into_iter()
     .flatten()
+    .chain(pack_navigation_links(tool, result, ctx))
     .collect()
+}
+
+/// The way through the levels of knowledge from the first symbol of a
+/// `pack`: its range, its file, its consumers, its component and the
+/// project.
+///
+/// The levels already exist as tools and the links only name them with the
+/// arguments filled in; the cost of the first three comes from the `reach`
+/// the pack published, so a link is offered only for what the answer
+/// measured. The two upper levels are inferences of the graph and the link
+/// says so: they are not facts of the code. Every link is a `read`: a
+/// pack is a read and offers nothing that changes the workspace. A symbol
+/// the pack left out has no entry in `items`, so a stale one is never
+/// offered; the rebuild is what brings it back.
+fn pack_navigation_links(tool: &str, result: &Value, ctx: &HandleContext) -> Vec<Link> {
+    if tool != "pack" {
+        return Vec::new();
+    }
+    let Some((item, reach)) = first_reached_item(result) else {
+        return Vec::new();
+    };
+    let (Some(id), Some(file), Some(start), Some(end)) = (
+        item.get("id").and_then(Value::as_str),
+        item.get("file").and_then(Value::as_str),
+        item.pointer("/range/start_line").and_then(Value::as_u64),
+        item.pointer("/range/end_line").and_then(Value::as_u64),
+    ) else {
+        return Vec::new();
+    };
+    let lines = reach.get("range_lines").and_then(Value::as_u64);
+    let callers = reach.get("direct_callers").and_then(Value::as_u64);
+
+    let mut range = Map::new();
+    range.insert("path".into(), json!(file));
+    range.insert("start_line".into(), json!(start));
+    range.insert("end_line".into(), json!(end));
+    let mut contract = Map::new();
+    contract.insert("file".into(), json!(file));
+    let mut consumers = Map::new();
+    consumers.insert("symbol".into(), json!(id));
+    consumers.insert("direction".into(), json!("callers"));
+
+    [
+        lines.and_then(|lines| {
+            read_link(
+                "read-range",
+                "read_file",
+                range,
+                format!(
+                    "L0 (fact): the source of `{id}`, lines {start}-{end} of {file} ({lines} {})",
+                    plural(lines as usize, "line")
+                ),
+                None,
+            )
+        }),
+        read_link(
+            "inspect-contract",
+            "inspect",
+            contract,
+            format!("L1 (fact): the structure of {file}, the file that declares `{id}`"),
+            None,
+        ),
+        callers.filter(|callers| *callers > 0).and_then(|callers| {
+            read_link(
+                "trace-consumers",
+                "trace",
+                consumers,
+                format!(
+                    "L2 (fact): `{id}` has {callers} direct {} in the graph",
+                    plural(callers as usize, "caller")
+                ),
+                Some(mint_handle(HandleKind::Sym, ctx, &json!(id))),
+            )
+        }),
+        read_link(
+            "inspect-component",
+            "graph_communities",
+            Map::new(),
+            "L3 (inferred): the communities of the call graph; a grouping the graph infers, not a declared component"
+                .to_string(),
+            None,
+        ),
+        read_link(
+            "inspect-overview",
+            "overview",
+            Map::new(),
+            "L4 (inferred): the overview of the project, derived from the graph".to_string(),
+            None,
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
+}
+
+/// The first item of a pack answer that has a `reach` entry, and the entry.
+fn first_reached_item(result: &Value) -> Option<(&Value, &Value)> {
+    let reach = result.pointer("/navigation/reach")?.as_array()?;
+    result.get("items")?.as_array()?.iter().find_map(|item| {
+        let id = item.get("id")?.as_str()?;
+        let entry = reach
+            .iter()
+            .find(|entry| entry.get("id").and_then(Value::as_str) == Some(id))?;
+        Some((item, entry))
+    })
+}
+
+/// A link to a tool the catalogue announces and whose authority is `read`.
+///
+/// The affordances of an answer never widen what the caller may do: a tool
+/// that is not announced, or that is not a read, produces no link.
+fn read_link(
+    rel: &str,
+    tool: &str,
+    required_args: Map<String, Value>,
+    reason: String,
+    handle: Option<String>,
+) -> Option<Link> {
+    catalogue()
+        .get(tool)
+        .filter(|descriptor| descriptor.authority == "read")?;
+    Some(link(rel, tool, required_args, reason, handle))
 }
 
 /// El reintento: un paso de la receta falló, y la receta se puede volver a
