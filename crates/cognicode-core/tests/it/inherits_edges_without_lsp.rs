@@ -98,3 +98,39 @@ async fn a_parent_name_two_declarations_share_invents_no_edge() {
     ];
     assert!(implementors_of(&files, "Mover").await.is_empty());
 }
+
+#[tokio::test]
+async fn a_parent_name_two_declarations_share_says_so_and_picks_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let files = [
+        write(dir.path(), "a/Mover.kt", "interface Mover\n"),
+        write(dir.path(), "b/Mover.kt", "interface Mover\n"),
+        write(dir.path(), "c/Car.kt", "class Car : Mover\n"),
+    ];
+    let paths: Vec<&std::path::Path> = files.iter().map(|p| p.as_path()).collect();
+    let report = PerFileGraphCache::new().merge_with_report(&paths);
+    let store = InMemoryGraphStore::new();
+    store.save_graph(&report.graph).unwrap();
+    let ctx = HandlerContext::builder().with_graph_store(store).build();
+
+    let answer = handle_get_implementors(
+        &ctx,
+        GetImplementorsInput {
+            trait_name: "Mover".to_string(),
+        },
+    )
+    .await
+    .expect("an ambiguous name is an answer, not an error");
+
+    assert!(answer.implementors.is_empty());
+    assert!(
+        answer.summary.contains("declared 2 times"),
+        "{}",
+        answer.summary
+    );
+    assert!(
+        answer.summary.contains("none was picked"),
+        "{}",
+        answer.summary
+    );
+}
