@@ -175,6 +175,7 @@ mod safety_gate_tests;
 mod scm_changeset_planning;
 
 mod an_sbom_is_read_against_the_fixture_workspace;
+mod detector_submission;
 #[cfg(feature = "evidence-kernel")]
 mod incremental_complete_snapshot;
 mod scm_revision_snapshots;

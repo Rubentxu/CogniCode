@@ -6,6 +6,8 @@
 
 pub mod axiom_migration;
 #[cfg(feature = "evidence-kernel")]
+pub mod detector_submission;
+#[cfg(feature = "evidence-kernel")]
 pub mod grounded_ast_projection;
 #[cfg(feature = "evidence-kernel")]
 pub mod grounded_finding_flow;
@@ -19,6 +21,11 @@ pub use axiom_migration::{
     AxiomDetectorTranslator, AxiomImportResult, AxiomImporter, AxiomRuleReader, ImportDiagnostic,
     ImportDiagnosticKind, ImportReport, ImportedDetectorDefinition, LegacyDetection,
     LegacyRuleProvenance, LegacySeverity, NormalizedLegacyRule, policy_for,
+};
+#[cfg(feature = "evidence-kernel")]
+pub use detector_submission::{
+    DETECTOR_SUBMISSION_SCHEMA, DetectorResult, DetectorStatus, DetectorSubmission, ObservedInputs,
+    ResultBasis, SubmissionReport, SubmissionRequest, SubmittedFinding, submit_detectors,
 };
 #[cfg(feature = "evidence-kernel")]
 pub use kernel_bridge::{CanonicalEvidenceWriter, KernelEvidenceReadModel};

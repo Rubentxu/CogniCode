@@ -195,6 +195,23 @@ impl ReadScope {
         }
     }
 
+    /// The exact scope of a query that read the named places directly, with
+    /// no facts to attribute them through: nothing was dropped and nothing is
+    /// left unattributed.
+    pub fn from_scoped_reads(
+        reads: impl IntoIterator<Item = ScopedRead>,
+        breadth: ReadBreadth,
+    ) -> Self {
+        let reads: BTreeSet<ScopedRead> = reads.into_iter().collect();
+        Self {
+            schema: READ_SCOPE_SCHEMA.to_string(),
+            reads: reads.into_iter().collect(),
+            truncated: false,
+            unresolved_reads: 0,
+            breadth,
+        }
+    }
+
     /// Whether the list names every read: nothing was dropped and nothing
     /// was left unattributed.
     pub fn is_exact(&self) -> bool {
