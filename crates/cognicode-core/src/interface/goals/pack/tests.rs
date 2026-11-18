@@ -255,3 +255,176 @@ fn the_coverage_is_a_bounded_sample_with_exact_totals() {
     assert_eq!(coverage.skipped_files_total, 0);
     assert_eq!(coverage.status, "partial");
 }
+
+mod reuse_within_a_session {
+    //! Inside a session the pack shares the published graph and its ranking
+    //! statistics between calls, and never serves them past a change of the
+    //! tree.
+
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::application::services::analysis_service::AnalysisService;
+    use crate::domain::traits::graph_store::GraphStore;
+    use crate::infrastructure::graph::analytics::ranking_stats::RankingStatsCache;
+    use crate::infrastructure::persistence::CachedGraphStore;
+    use crate::interface::project_graph::GraphSession;
+
+    fn session() -> GraphSession {
+        let analysis = Arc::new(AnalysisService::new());
+        let store: Arc<dyn GraphStore> = Arc::new(CachedGraphStore::new(analysis.graph_cache()));
+        GraphSession::new(analysis, store, Arc::new(RankingStatsCache::default()))
+    }
+
+    fn pack_text(environment: &GoalEnvironment, arguments: &Value) -> String {
+        serde_json::to_string(&run(environment, arguments).unwrap()).unwrap()
+    }
+
+    fn request() -> Value {
+        json!({"intent": "parse run", "max_tokens": 400})
+    }
+
+    /// A project with a durable snapshot already published, so that a fresh
+    /// build and a session answer from the same source of the graph.
+    fn warm_project() -> (tempfile::TempDir, tempfile::TempDir) {
+        let project = rust_project();
+        let cache = tempfile::tempdir().unwrap();
+        run(
+            &GoalEnvironment::new(project.path(), Some(cache.path())),
+            &request(),
+        )
+        .unwrap();
+        (project, cache)
+    }
+
+    #[test]
+    fn a_session_pack_is_byte_identical_to_a_fresh_one() {
+        let (project, cache) = warm_project();
+        let session = session();
+        let fresh = pack_text(
+            &GoalEnvironment::new(project.path(), Some(cache.path())),
+            &request(),
+        );
+
+        let environment =
+            GoalEnvironment::new(project.path(), Some(cache.path())).with_session(&session);
+        for call in 0..3 {
+            assert_eq!(
+                pack_text(&environment, &request()),
+                fresh,
+                "call {call} of the session"
+            );
+        }
+    }
+
+    #[test]
+    fn repeated_calls_share_the_graph_and_build_the_statistics_once() {
+        let (project, cache) = warm_project();
+        let session = session();
+        let environment =
+            GoalEnvironment::new(project.path(), Some(cache.path())).with_session(&session);
+
+        let first = session
+            .project_graph(project.path(), Some(cache.path()))
+            .unwrap();
+        for _ in 0..4 {
+            run(&environment, &request()).unwrap();
+        }
+        let last = session
+            .project_graph(project.path(), Some(cache.path()))
+            .unwrap();
+
+        assert!(
+            Arc::ptr_eq(&first.graph, &last.graph),
+            "every call hands out the snapshot the session published"
+        );
+        let counters = session.ranking_stats().counters();
+        assert_eq!(counters.builds, 1, "counters: {counters:?}");
+        assert!(counters.hits >= 3, "counters: {counters:?}");
+    }
+
+    #[test]
+    fn a_later_call_keeps_the_coverage_the_build_measured() {
+        let project = tempfile::tempdir().unwrap();
+        write(
+            project.path(),
+            "src/a.rs",
+            "pub fn run() -> u32 {\n    parse(1) + helper()\n}\n\npub fn helper() -> u32 {\n    missing_callee()\n}\n",
+        );
+        write(
+            project.path(),
+            "src/b.rs",
+            "pub fn parse(x: u32) -> u32 {\n    x\n}\n",
+        );
+        write(
+            project.path(),
+            "src/c.rs",
+            "pub fn parse(x: u64) -> u64 {\n    x\n}\n",
+        );
+        let session = session();
+        let environment = GoalEnvironment::new(project.path(), None).with_session(&session);
+
+        let built = run(&environment, &request()).unwrap();
+        let served = run(&environment, &request()).unwrap();
+
+        assert_eq!(built["basis"]["graph_source"], "built");
+        assert_eq!(served["basis"]["graph_source"], "cache");
+        assert!(
+            built["coverage"]["pending_references_total"]
+                .as_u64()
+                .unwrap()
+                > 0,
+            "the fixture leaves references pending: {built}"
+        );
+        assert_eq!(
+            built["coverage"], served["coverage"],
+            "serving the graph again does not forget what its build left open"
+        );
+    }
+
+    #[test]
+    fn a_change_of_the_tree_is_never_answered_from_the_old_graph() {
+        let (project, cache) = warm_project();
+        let session = session();
+        let environment =
+            GoalEnvironment::new(project.path(), Some(cache.path())).with_session(&session);
+        let before = run(&environment, &request()).unwrap();
+
+        write(
+            project.path(),
+            "src/c.rs",
+            "pub fn parse_more() -> u32 {\n    7\n}\n",
+        );
+        let after = run(&environment, &request()).unwrap();
+        let fresh = run(
+            &GoalEnvironment::new(project.path(), Some(cache.path())),
+            &request(),
+        )
+        .unwrap();
+
+        assert_ne!(
+            before["snapshot"]["digest"], after["snapshot"]["digest"],
+            "the digest names the new tree"
+        );
+        assert_eq!(after["snapshot"]["files"], 3);
+        // Only the provenance label may differ: the session rebuilt the graph
+        // and the fresh call then read the snapshot the rebuild published.
+        let without_source = |mut answer: Value| {
+            answer["basis"]
+                .as_object_mut()
+                .unwrap()
+                .remove("graph_source");
+            answer
+        };
+        assert_eq!(
+            without_source(after),
+            without_source(fresh),
+            "the session answers what a fresh build does"
+        );
+        assert_eq!(
+            session.ranking_stats().counters().builds,
+            2,
+            "the statistics of the new snapshot are built, not reused"
+        );
+    }
+}

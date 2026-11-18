@@ -46,7 +46,7 @@ fn symbol(graph: &mut CallGraph, name: &str, line: u32) -> SymbolId {
     ))
 }
 
-fn link(
+pub(super) fn link(
     graph: &mut CallGraph,
     from: &SymbolId,
     to: &SymbolId,
@@ -159,7 +159,7 @@ fn typed_graph(reversed: bool) -> CallGraph {
 }
 
 /// A context whose graph is `graph`, handed over by nobody who measured it.
-fn context_holding(graph: CallGraph) -> HandlerContext {
+pub(super) fn context_holding(graph: CallGraph) -> HandlerContext {
     let ctx = HandlerContext::builder().build();
     ctx.analysis_service().graph_cache().replace(graph);
     ctx
@@ -179,7 +179,7 @@ async fn ask(ctx: &HandlerContext, question: &str, max_depth: usize, budget: usi
     serde_json::to_value(output).expect("the answer is JSON")
 }
 
-fn array<'a>(answer: &'a Value, field: &str) -> &'a Vec<Value> {
+pub(super) fn array<'a>(answer: &'a Value, field: &str) -> &'a Vec<Value> {
     answer[field]
         .as_array()
         .unwrap_or_else(|| panic!("`{field}` is an array: {answer}"))
@@ -248,7 +248,7 @@ fn write(path: &Path, contents: &str) {
 }
 
 /// A tree that is read whole: a function and the one that calls it.
-fn readable_tree() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn readable_tree() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().to_path_buf();
     write(
@@ -260,7 +260,7 @@ fn readable_tree() -> (tempfile::TempDir, PathBuf) {
 
 /// A tree with a call the graph cannot tie to one declaration: two functions
 /// carry the name, so the relation stays loose and the graph lacks an edge.
-fn tree_with_an_ambiguous_call() -> (tempfile::TempDir, PathBuf) {
+pub(super) fn tree_with_an_ambiguous_call() -> (tempfile::TempDir, PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().to_path_buf();
     write(

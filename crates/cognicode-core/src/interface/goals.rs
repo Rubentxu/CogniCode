@@ -41,6 +41,7 @@ use serde_json::{Map, Value};
 use std::path::Path;
 
 use crate::interface::catalog::ToolDescriptor;
+use crate::interface::project_graph::GraphSession;
 
 /// Lo que un goal puede hacer con el workspace.
 ///
@@ -128,12 +129,18 @@ impl GoalPhase {
 ///
 /// La caché es `None` cuando el entorno no dice dónde hay una: el producto
 /// entonces no guarda nada en vez de escribir en un sitio inventado.
+///
+/// Un servidor de larga vida añade lo que ya guarda entre llamadas: la
+/// [`GraphSession`]. Sin ella (la terminal, las recetas) cada llamada
+/// decide su grafo de cero.
 #[derive(Debug, Clone, Copy)]
 pub struct GoalEnvironment<'a> {
     /// El workspace que se analiza.
     pub workspace: &'a Path,
     /// Dónde guarda el producto lo que deriva del workspace.
     pub cache_root: Option<&'a Path>,
+    /// Lo que la sesión comparte entre llamadas, cuando hay sesión.
+    pub session: Option<&'a GraphSession>,
 }
 
 impl<'a> GoalEnvironment<'a> {
@@ -142,6 +149,15 @@ impl<'a> GoalEnvironment<'a> {
         Self {
             workspace,
             cache_root,
+            session: None,
+        }
+    }
+
+    /// El mismo contexto, sobre el estado que comparte una sesión.
+    pub fn with_session(self, session: &'a GraphSession) -> Self {
+        Self {
+            session: Some(session),
+            ..self
         }
     }
 }
