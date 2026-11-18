@@ -224,9 +224,12 @@ fn decide_the_graph(
                 let tree = service.tree_state(project_dir);
                 let vouched = vouched_for(service, manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(manifest, project_dir, &tree.files) {
-                    let served = loaded(
+                    let revision = service.current_graph_revision();
+                    let graph = service.get_project_graph();
+                    let held_still = revision == service.current_graph_revision();
+                    let mut served = loaded(
                         service,
-                        service.get_project_graph(),
+                        graph,
                         None,
                         if vouched {
                             GraphSource::Daemon
@@ -238,6 +241,18 @@ fn decide_the_graph(
                         // holds: no stage ran now, so none is measured.
                         crate::application::graph_timings::GraphPhaseTimings::default(),
                     );
+                    // The report of the build that produced this graph is
+                    // the session's own, so what that build measured is
+                    // what the graph covers: the holes of the tree now say
+                    // nothing about the references the build left pending.
+                    // The measure is taken only if it describes this very
+                    // graph; otherwise the coverage stays the one the tree
+                    // gives.
+                    if held_still
+                        && let Some(measure) = service.graph_measures().of(revision, &served.graph)
+                    {
+                        served.coverage = measure.coverage;
+                    }
                     remember_the_measure(service, project_dir, &served, Some(manifest));
                     return Ok(served);
                 }
@@ -269,10 +284,14 @@ fn decide_the_graph(
                 let tree = service.tree_state(project_dir);
                 let vouched = vouched_for(service, &manifest, project_dir, &tree);
                 if vouched || !is_manifest_stale(&manifest, project_dir, &tree.files) {
-                    service.graph_cache().replace(graph.clone());
+                    // The graph served is the one just published, not a
+                    // copy of it: the next call that serves the session's
+                    // graph hands out this same `Arc`, so whatever is
+                    // derived per snapshot is derived once.
+                    service.graph_cache().replace(graph);
                     let served = loaded(
                         service,
-                        Arc::new(graph),
+                        service.get_project_graph(),
                         Some(manifest),
                         if vouched {
                             GraphSource::Daemon

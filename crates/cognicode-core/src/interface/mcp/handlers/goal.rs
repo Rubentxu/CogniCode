@@ -12,6 +12,7 @@
 
 use super::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::goals::{GoalEnvironment, GoalSpec};
+use crate::interface::project_graph::GraphSession;
 use std::path::Path;
 
 /// Ejecuta un goal del registro y devuelve su respuesta.
@@ -34,9 +35,18 @@ pub async fn handle_goal(
     // analiza y dónde guarda el producto lo que deriva de él.
     let workspace = ctx.working_dir().to_path_buf();
     let cache_root = ctx.cache_root().map(Path::to_path_buf);
+    // What the server already keeps for its other tools is what a goal
+    // shares between calls: the published graph with its manifest, and the
+    // ranking statistics of that snapshot.
+    let session = GraphSession::new(
+        ctx.analysis_service().clone(),
+        ctx.get_graph_store(),
+        ctx.ranking_stats_cache(),
+    );
     let run = goal.run;
     tokio::task::spawn_blocking(move || {
-        let context = GoalEnvironment::new(&workspace, cache_root.as_deref());
+        let context =
+            GoalEnvironment::new(&workspace, cache_root.as_deref()).with_session(&session);
         run(&context, &arguments)
     })
     .await
