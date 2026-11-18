@@ -1,8 +1,8 @@
 ---
 name: cognicode-mcp
 description: >
-  Drive CogniCode's MCP server effectively: its 92-tool full surface
-  and the fourteen goals on top, the profile each one lives in, graph
+  Drive CogniCode's MCP server effectively: its 95-tool full surface
+  and the seventeen goals on top, the profile each one lives in, graph
   prerequisites, read-before-write, incremental re-analysis, error
   recovery. Trigger: When an agent is doing multi-step graph
   exploration, impact analysis, quality audits, or safe refactoring
@@ -36,7 +36,7 @@ surface says what `tools/list` announces — not what the server may do.
 | profile   | what `tools/list` announces                                                                    |
 |-----------|--------------------------------------------------------------------------------------------------|
 | `default` | the **five goals** that answer before the analysis: `status`, `context`, `find`, `inspect`, `trace` |
-| `full`    | every goal **and** every tool — the 92 tools the master publishes, announced on the wire           |
+| `full`    | every goal **and** every tool — the 95 tools the master publishes, announced on the wire           |
 | `legacy`  | the tools that came before the goals, each carrying the notice that names its substitute            |
 
 The default is `default`. **If `tools/list` shows only goals, the server is
@@ -44,7 +44,7 @@ announcing the small surface** — the tools are still there and still work,
 but they are not announced; ask for `--profile full` (both) or
 `--profile legacy` (the tools, with the deprecation notice) if you need them.
 
-### The fourteen goals
+### The seventeen goals
 
 A **goal** is what a consumer *asks*; a **tool** is what the product
 *computes*. Every goal is mounted on a tool that already existed, so a goal
@@ -66,6 +66,9 @@ answers without computing anything new.
 | `verify`   | does the stored snapshot of a revision match a full rebuild? | —             |
 | `security` | what does the Terraform and Helm security pack find? | —                     |
 | `preflight`| what facts would these edits add and remove, before writing? | —             |
+| `dependencies` | what Cargo packages does a revision resolve? | —                 |
+| `pack`     | which symbols answer this request, with evidence? | —                |
+| `advisories` | which resolved packages does a pinned OSV feed cover? | —          |
 
 `change` is the only goal that writes, so it does not appear in
 `--read-only`; `preflight` lays its edits over a revision in memory and
@@ -335,7 +338,7 @@ There is no version-pinned reference in this skill.
 ## What this skill does NOT do
 
 - It does not teach you how to **install** CogniCode. Use `cogh`.
-- It does not list all 92 tools (the fourteen goals and the tools behind
+- It does not list all 95 tools (the seventeen goals and the tools behind
   them). Use `tools/list`.
 - It does not promise internal CogniCode subsystems (e77
   architecture, LSI facts/evidence, governed promotion) as public

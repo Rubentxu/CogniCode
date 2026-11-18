@@ -804,6 +804,13 @@ fn limitations(goal: &GoalSpec) -> Vec<String> {
             "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
                 .to_string(),
         ]
+    } else if goal.name == "advisories" {
+        vec![
+            "Reads a pinned OSV feed from a workspace file, offline and never fetched: a match is an observation, not exploitability, and not artifact signature verification."
+                .to_string(),
+            "Only crates.io packages of Cargo lockfiles are correlated; yanked status is not known; a stale, partial or unparseable feed never yields a clean result."
+                .to_string(),
+        ]
     } else if goal.name == "pack" {
         vec![
             "The selection is by identity, name weight and direct relation: a pack that delivered every candidate is still not a statement about the code it did not select."

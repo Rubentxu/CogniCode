@@ -379,6 +379,10 @@ def lines_of(text: str, start: int, end: int) -> str:
 # ---- effects ---------------------------------------------------------------
 
 
+GIT_DEADLINE_SECONDS = 120
+MEASURED_COMMAND_DEADLINE_SECONDS = 600
+
+
 def git(repo: Path, *args: str) -> str:
     env = {"PATH": os.environ["PATH"], "GIT_CONFIG_GLOBAL": os.devnull,
            "GIT_CONFIG_SYSTEM": os.devnull, "HOME": str(repo)}
@@ -386,6 +390,7 @@ def git(repo: Path, *args: str) -> str:
         ["git", "-c", "user.name=measure", "-c", "user.email=measure@example.invalid",
          "-c", "commit.gpgsign=false", *args],
         cwd=repo, env=env, capture_output=True, text=True, check=False,
+        timeout=GIT_DEADLINE_SECONDS,
     )
     if done.returncode not in (0, 1):  # `git grep` answers 1 for no match
         raise RuntimeError(f"git {args}: {done.stderr.strip()}")
@@ -434,7 +439,10 @@ def declarations_of() -> dict[str, set[str]]:
 
 def timed(command: list[str], cwd: Path, env: dict | None = None) -> tuple[float, subprocess.CompletedProcess]:
     started = time.perf_counter()
-    done = subprocess.run(command, cwd=cwd, env=env, capture_output=True, text=True, check=False)
+    done = subprocess.run(
+        command, cwd=cwd, env=env, capture_output=True, text=True, check=False,
+        timeout=MEASURED_COMMAND_DEADLINE_SECONDS,
+    )
     return (time.perf_counter() - started) * 1000, done
 
 
