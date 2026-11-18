@@ -87,3 +87,12 @@ pub trait Relevance {
     /// At most `max` symbols, best first, equal scores in symbol id order.
     fn rank(&self, intent: &str, max: usize) -> Vec<Ranked>;
 }
+
+/// The relevance of a request that carries no intent: it ranks nothing.
+pub struct NoRelevance;
+
+impl Relevance for NoRelevance {
+    fn rank(&self, _intent: &str, _max: usize) -> Vec<Ranked> {
+        Vec::new()
+    }
+}

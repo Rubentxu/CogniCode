@@ -16,7 +16,7 @@ mod tests;
 
 pub use measure::{LexicalV1, MeasureKind, Measured, TokenMeasure, Utf8UpperBound, measure_named};
 pub use ports::{
-    DeclarationReader, DeclarationSpan, Ranked, Relevance, SnapshotView, SourceReader,
+    DeclarationReader, DeclarationSpan, NoRelevance, Ranked, Relevance, SnapshotView, SourceReader,
 };
 pub use selection::{
     Ambiguity, Candidate, ContextSelection, MAX_CANDIDATES, Reason, SelectionRequest, select,

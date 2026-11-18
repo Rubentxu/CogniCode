@@ -68,6 +68,8 @@ impl Direction {
 /// One row of the hot-paths answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HotPath {
+    /// The identity of the symbol: the name alone does not say which one.
+    pub id: SymbolId,
     pub name: String,
     pub file: String,
     pub line: u32,
@@ -150,6 +152,7 @@ pub fn hot_paths(graph: &CallGraph, limit: usize, min_fan_in: usize) -> Vec<HotP
                 return None;
             }
             Some(HotPath {
+                id,
                 name: symbol.name().to_string(),
                 file: symbol.location().file().to_string(),
                 line: published_line(symbol.location().line()),

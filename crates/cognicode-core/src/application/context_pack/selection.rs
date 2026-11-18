@@ -9,7 +9,8 @@
 //! 1. the anchors the caller named, resolved by identity;
 //! 2. the symbols whose name matches the intent, ranked by the existing IDF
 //!    ranker;
-//! 3. the direct callees and callers of the anchors.
+//! 3. the direct callees and callers of the anchors;
+//! 4. the most connected symbols, when the request asks for them.
 //!
 //! A symbol that several sources propose keeps the first reason. Ties are
 //! broken by symbol id, so the same snapshot and the same request give the
@@ -23,15 +24,20 @@
 //! them, because choosing one would answer about a symbol the caller may not
 //! have meant.
 
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
 use super::ports::Relevance;
+use crate::application::services::graph_queries::hot_paths;
 use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 
 /// The most candidates a selection holds.
 pub const MAX_CANDIDATES: usize = 200;
+
+/// The fewest callers a symbol needs to count as a hot path.
+const HOT_PATH_MIN_FAN_IN: usize = 2;
 
 /// The most symbols the intent ranking contributes.
 const INTENT_CANDIDATES: usize = 50;
@@ -113,6 +119,10 @@ pub struct SelectionRequest {
     pub anchors: Vec<String>,
     /// What the caller is trying to do, in words.
     pub intent: Option<String>,
+    /// How many of the most connected symbols to propose when nothing else
+    /// does; zero proposes none. It is the zero-query entry: no anchor and
+    /// no intent, only the snapshot.
+    pub hot_paths: usize,
 }
 
 /// The candidates of a request, in the order they are delivered.
@@ -124,28 +134,6 @@ pub struct ContextSelection {
     pub ambiguities: Vec<Ambiguity>,
     /// The anchors that name no symbol of the snapshot.
     pub unresolved: Vec<String>,
-}
-
-impl ContextSelection {
-    /// A selection made of candidates a caller already chose.
-    ///
-    /// The seeds keep their order and their reasons. It is the entry of the
-    /// callers that have no intent and no anchor to resolve —the zero-query
-    /// suggestion starts from the hot paths— and it is the same projection
-    /// the pack builds from, so both go through one selection.
-    pub fn seeded(seeds: Vec<Candidate>) -> Self {
-        let mut selection = ContextSelection::default();
-        let mut seen = HashSet::new();
-        for seed in seeds {
-            if selection.candidates.len() == MAX_CANDIDATES {
-                break;
-            }
-            if seen.insert(seed.id.clone()) {
-                selection.candidates.push(seed);
-            }
-        }
-        selection
-    }
 }
 
 /// How an anchor resolves over a graph.
@@ -251,6 +239,37 @@ fn rank_intent(graph: &CallGraph, relevance: &dyn Relevance, intent: &str) -> Ve
         .collect()
 }
 
+/// The most connected symbols, best first.
+///
+/// The owner of the hot-path question is the graph queries service; this only
+/// gives its rows the shape of a candidate. The score favours a symbol that
+/// is called more than it calls.
+fn hot_path_candidates(graph: &CallGraph, limit: usize) -> Vec<Candidate> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    hot_paths(graph, limit, HOT_PATH_MIN_FAN_IN)
+        .into_iter()
+        .map(|row| Candidate {
+            score: hotness(row.fan_in, row.fan_out),
+            reason: Reason::HotPath {
+                fan_in: row.fan_in,
+                fan_out: row.fan_out,
+            },
+            id: row.id,
+        })
+        .collect()
+}
+
+/// How hot a symbol is, from zero to one: callers against callees.
+fn hotness(fan_in: usize, fan_out: usize) -> f64 {
+    match fan_in.cmp(&fan_out) {
+        Ordering::Greater => fan_in as f64 / (fan_in + fan_out) as f64,
+        Ordering::Equal if fan_in == 0 => 0.5,
+        _ => 0.3,
+    }
+}
+
 /// Selects the candidates of `request` over `graph`.
 pub fn select(
     graph: &CallGraph,
@@ -309,6 +328,8 @@ pub fn select(
             });
         }
     }
+
+    proposals.extend(hot_path_candidates(graph, request.hot_paths));
 
     let mut seen = HashSet::new();
     for proposal in proposals {

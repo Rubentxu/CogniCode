@@ -163,6 +163,7 @@ fn request(anchors: &[&str], max_tokens: u64) -> PackRequest {
         selection: SelectionRequest {
             anchors: anchors.iter().map(|a| a.to_string()).collect(),
             intent: None,
+            hot_paths: 0,
         },
         max_tokens,
         continuation: None,
@@ -459,6 +460,7 @@ fn the_intent_ranking_contributes_name_relevance_candidates() {
         selection: SelectionRequest {
             anchors: vec![],
             intent: Some("go".to_string()),
+            hot_paths: 0,
         },
         max_tokens: 10_000,
         continuation: None,
@@ -494,6 +496,7 @@ fn a_phrase_intent_is_ranked_term_by_term_and_the_scores_add() {
         &SelectionRequest {
             anchors: vec![],
             intent: Some("Parse, then run".to_string()),
+            hot_paths: 0,
         },
     );
 
@@ -510,35 +513,65 @@ fn a_phrase_intent_is_ranked_term_by_term_and_the_scores_add() {
 }
 
 #[test]
-fn a_seeded_selection_keeps_order_and_reasons_and_drops_repeats() {
-    let f = fixture();
-    let a = f.ids["a_parse"].clone();
-    let b = f.ids["b_parse"].clone();
-    let seeds = vec![
-        Candidate {
-            id: b.clone(),
-            reason: Reason::HotPath {
-                fan_in: 1,
-                fan_out: 0,
-            },
-            score: 1.0,
-        },
-        Candidate {
-            id: a.clone(),
-            reason: Reason::HotPath {
-                fan_in: 0,
-                fan_out: 1,
-            },
-            score: 0.5,
-        },
-        Candidate {
-            id: b.clone(),
-            reason: Reason::Anchor,
-            score: 9.0,
-        },
-    ];
-    let selection = ContextSelection::seeded(seeds);
+fn the_zero_query_selection_proposes_the_most_connected_symbols_with_their_reason() {
+    let mut graph = CallGraph::new();
+    let mut add = |name: &str, line: u32| {
+        graph.add_symbol(Symbol::new(
+            name,
+            SymbolKind::Function,
+            Location::new("src/a.rs", line, 0),
+        ))
+    };
+    let hot = add("hot", 0);
+    let warm = add("warm", 1);
+    let c1 = add("c1", 2);
+    let c2 = add("c2", 3);
+    let c3 = add("c3", 4);
+    for (from, to) in [
+        (&c1, &hot),
+        (&c2, &hot),
+        (&c3, &hot),
+        (&c1, &warm),
+        (&c2, &warm),
+    ] {
+        graph
+            .add_dependency(from, to, DependencyType::Calls)
+            .unwrap();
+    }
+    let request = SelectionRequest {
+        hot_paths: 10,
+        ..SelectionRequest::default()
+    };
+    let selection = select(&graph, &NoRelevance, &request);
     let ids: Vec<_> = selection.candidates.iter().map(|c| c.id.clone()).collect();
-    assert_eq!(ids, vec![b, a]);
+    assert_eq!(
+        ids,
+        vec![hot, warm],
+        "fan_in 3 then 2; one caller is not hot"
+    );
     assert_eq!(selection.candidates[0].reason.code(), "hot_path");
+    assert_eq!(
+        selection.candidates[0].reason.detail().as_deref(),
+        Some("fan_in=3, fan_out=0")
+    );
+    assert!(
+        selection.candidates.iter().all(|c| c.score == 1.0),
+        "called and calling nothing scores one"
+    );
+
+    let capped = select(
+        &graph,
+        &NoRelevance,
+        &SelectionRequest {
+            hot_paths: 1,
+            ..SelectionRequest::default()
+        },
+    );
+    assert_eq!(capped.candidates.len(), 1);
+    assert!(
+        select(&graph, &NoRelevance, &SelectionRequest::default())
+            .candidates
+            .is_empty(),
+        "a request that asks for nothing selects nothing"
+    );
 }

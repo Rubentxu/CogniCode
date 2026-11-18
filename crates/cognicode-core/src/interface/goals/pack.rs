@@ -280,6 +280,7 @@ pub fn pack(
             selection: SelectionRequest {
                 anchors: input.symbols.clone(),
                 intent: intent.map(str::to_string),
+                hot_paths: 0,
             },
             max_tokens,
             continuation: input.continuation_token.clone(),
