@@ -168,6 +168,7 @@ mod safety_gate_tests;
 #[cfg(feature = "evidence-kernel")]
 mod scm_changeset_planning;
 
+mod an_sbom_is_read_against_the_fixture_workspace;
 #[cfg(feature = "evidence-kernel")]
 mod incremental_complete_snapshot;
 mod scm_revision_snapshots;
