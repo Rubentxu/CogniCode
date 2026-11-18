@@ -2,7 +2,7 @@
   "schema_version": "cognicode.tools/v1",
   "product": "cognicode",
   "source_commit": "ebdb62febc0b1a4853cdc6e172d0b6ae1fb49018",
-  "runtime_tool_count": 92,
+  "runtime_tool_count": 93,
   "tools": [
     {
       "name": "analyze_impact",
@@ -1894,6 +1894,78 @@
       "required_args": [
         "edits"
       ]
+    },
+    {
+      "name": "dependencies",
+      "title": "The resolved Cargo dependency inventory of a revision",
+      "description": "Read the tracked Cargo.toml and Cargo.lock files of a Git revision, offline, and report per workspace unit the packages the lockfile pins (version, source, SHA-256 checksum or pinned Git commit, Package URL identity), the member declarations that asked for them (kind, target, requirement, features) and whether the lockfile agrees with the manifests: `consistent`, `stale` (a declaration, member or edge disagrees), `partial` (some requirement or file could not be checked), `no_lockfile` or `no_manifest`. The answer is anchored to the revision and to the digest of the lockfile bytes, and states which of the declared, resolved, observed and distributed layers were collected: observed and distributed never are. `dependents_of` (`name` or `name@version`) lists the transitive dependents and the workspace members they affect; `base_ref` adds the packages added, removed and updated in the lockfile since that revision; `path` restricts the units. Cargo, build scripts and the network are never run, so resolved features and the kind of edges between non-member packages are not reported. Example: `cognicode dependencies --dependents-of serde`.",
+      "category": "goal",
+      "authority": "read",
+      "stability": "stable",
+      "input_schema": {
+        "description": "Arguments for the `dependencies` goal.",
+        "properties": {
+          "base_ref": {
+            "default": null,
+            "description": "A Git revision to compare against: adds, per workspace unit, the\npackages added, removed and updated in the lockfile.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependents_of": {
+            "default": null,
+            "description": "A package, as `name` or `name@version`, whose transitive dependents\nare listed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "path": {
+            "default": null,
+            "description": "Restricts the answer to the workspace units that contain or lie under\nthis repository-relative path.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "revision": {
+            "default": "HEAD",
+            "description": "The Git revision to inventory. Defaults to `HEAD`.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "output_schema": null,
+      "requirements": {
+        "cache": null,
+        "graph": false,
+        "network": null,
+        "persistence": false
+      },
+      "requirements_status": "not_declared",
+      "estimated_latency_ms": 30,
+      "public_profiles": [
+        "core",
+        "reviewer"
+      ],
+      "runtime_metadata": {
+        "authority": "read",
+        "category": "goal",
+        "estimated_latency_ms": 30,
+        "mutates_workspace": false,
+        "requires_graph": false,
+        "requires_persistence": false,
+        "stability": "stable",
+        "tool_version": "0.106.0"
+      },
+      "precision_floor": "ast-heuristic",
+      "limitations": [
+        "Reads tracked Cargo.toml and Cargo.lock bytes offline: resolved features and the kind of edges between non-member packages are not reported.",
+        "The observed and distributed layers are not collected; only the Cargo ecosystem is read."
+      ],
+      "required_args": []
     },
     {
       "name": "detect_drift",
