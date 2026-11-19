@@ -156,7 +156,13 @@ impl ReadScope {
         facts: &RevisionFacts,
         breadth: ReadBreadth,
     ) -> Option<Self> {
-        (record.produced_snapshot == facts.snapshot).then(|| {
+        (record.produced_snapshot == facts.snapshot
+            && !record.observed_truncated
+            && record
+                .read_boundary
+                .as_ref()
+                .is_some_and(|boundary| boundary.is_supported_for(record)))
+        .then(|| {
             Self::from_reads(
                 record.observed_facts.iter().copied(),
                 record.observed_truncated,
@@ -685,6 +691,7 @@ mod tests {
                 parser: digest("parser"),
                 sanitizer: digest("sanitizer"),
             },
+            read_boundary: None,
             observed_facts: [FactId(2)].into_iter().collect(),
             observed_truncated: true,
             produced_snapshot: SnapshotId(snapshot),
@@ -693,9 +700,7 @@ mod tests {
         let base = revision(1, "helper", false);
 
         assert!(ReadScope::from_run(&record(2), &base, ReadBreadth::Pointwise).is_none());
-        let scope = ReadScope::from_run(&record(1), &base, ReadBreadth::Pointwise).expect("scope");
-        assert!(scope.truncated, "the run's truncation mark carries over");
-        assert_eq!(scope.reads, vec![read("src/a.rs", Some("alpha"))]);
+        assert!(ReadScope::from_run(&record(1), &base, ReadBreadth::Pointwise).is_none());
     }
 
     #[test]
