@@ -6594,6 +6594,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "continuation_token": {
+            "default": null,
+            "description": "Resume a cut answer with the `next_continuation_token` of the\nprevious page, exactly as the `continue` link fills it. The token\nis anchored to this workspace and to the revision of the graph it\nwas minted from: a token from another revision, another question\nor another depth is refused with its typed error, never\nreinterpreted.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "max_depth": {
             "default": 3,
             "description": "Maximum BFS depth from the seed nodes (default: 3). Depth 0 returns\nonly the seeds.",
@@ -7108,6 +7116,10 @@
               "explanation": {
                 "type": "string"
               },
+              "has_more": {
+                "description": "Whether the budget cut the answer and a cursor continues it.\n\nA cut by `max_depth` is not a continuation: the traversal is over,\nwhat sits beyond the depth is not in it. Only a cut by `budget`\nmeans \"there is a next page\".",
+                "type": "boolean"
+              },
               "limits": {
                 "$ref": "#/$defs/GraphQueryLimits",
                 "description": "The limits the walk ran under and how much of them it used."
@@ -7115,6 +7127,13 @@
               "mode": {
                 "description": "What the answer is: always `traversal`, the nodes reached from the\nseeds and the edges followed, as opposed to the subgraph induced by\nthe returned nodes.",
                 "type": "string"
+              },
+              "next_continuation_token": {
+                "description": "The cursor to pass back as `continuation_token` for the next page.\n\nOpaque, and anchored to this workspace and to the revision of the\ngraph this page was read from: the same traversal resumes exactly\nwhere this page stopped, and a cursor from another revision is\nrefused with its typed error, never reinterpreted. Published only\nwhen `has_more` is true.",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "nodes": {
                 "description": "The nodes reached: the seeds first, then the nodes the walk\ndiscovered, in discovery order.",
@@ -7159,7 +7178,8 @@
               "truncated",
               "unexpanded_nodes",
               "limits",
-              "coverage"
+              "coverage",
+              "has_more"
             ],
             "title": "GraphQueryOutput",
             "type": "object"

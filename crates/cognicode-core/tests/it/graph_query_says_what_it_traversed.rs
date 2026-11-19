@@ -178,6 +178,7 @@ async fn ask(ctx: &HandlerContext, question: &str, max_depth: usize, budget: usi
             question: question.to_string(),
             max_depth,
             budget,
+            continuation_token: None,
         },
     )
     .await

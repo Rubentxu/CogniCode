@@ -167,6 +167,7 @@ async fn the_analysis_tools_serve_the_graph_without_copying_it() {
             question: "who calls alpha".to_string(),
             max_depth: 2,
             budget: 50,
+            continuation_token: None,
         },
     )
     .await
