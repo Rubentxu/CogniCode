@@ -320,3 +320,102 @@ fn a_parent_in_another_directory_is_a_parent() {
          relations for the same tree: {project_edges:?} vs {file_edges:?}"
     );
 }
+
+/// A PHP class and the class that extends it.
+const PHP_MODEL_PHP: &str = "\
+<?php
+class Animal {}
+
+class Dog extends Animal implements Pet {}
+
+interface Pet {}
+";
+
+/// A Swift class and the class that extends it.
+const SWIFT_MODEL_SWIFT: &str = "\
+class Animal {}
+
+class Dog: Animal {}
+";
+
+/// A Ruby class and the class that extends it.
+const RUBY_MODEL_RB: &str = "\
+class Animal
+end
+
+class Dog < Animal
+end
+";
+
+/// A Go struct and the struct that embeds it.
+const GO_MODEL_GO: &str = "\
+package main
+
+type Animal struct{}
+
+type Dog struct {
+\tAnimal
+\tName string
+}
+";
+
+/// PHP: the class a class extends is the parent of the class.
+#[test]
+fn the_project_route_says_which_php_class_extends_which() {
+    let (dir, _files) = project(&[("models.php", PHP_MODEL_PHP)]);
+
+    let edges = inherits_edges(&project_route(dir.path()));
+
+    assert_eq!(
+        edges,
+        vec!["Dog -> Animal".to_string()],
+        "`class Dog extends Animal` names the parent of the class: {edges:?}"
+    );
+}
+
+/// Swift: the class a class inherits is the parent of the class.
+#[test]
+fn the_project_route_says_which_swift_class_inherits_which() {
+    let (dir, _files) = project(&[("Models.swift", SWIFT_MODEL_SWIFT)]);
+
+    let edges = inherits_edges(&project_route(dir.path()));
+
+    assert_eq!(
+        edges,
+        vec!["Dog -> Animal".to_string()],
+        "`class Dog: Animal` names the parent of the class: {edges:?}"
+    );
+}
+
+/// Ruby: the class a class inherits is the parent of the class.
+///
+/// The message of 2a6b79be claimed the Ruby reader already published a
+/// parent; main's reader looked for a `parent` field the grammar does not
+/// emit, so it said nothing. This is the measurement of the fact.
+#[test]
+fn the_project_route_says_which_ruby_class_inherits_which() {
+    let (dir, _files) = project(&[("models.rb", RUBY_MODEL_RB)]);
+
+    let edges = inherits_edges(&project_route(dir.path()));
+
+    assert_eq!(
+        edges,
+        vec!["Dog -> Animal".to_string()],
+        "`class Dog < Animal` names the parent of the class: {edges:?}"
+    );
+}
+
+/// Go: the struct a struct embeds is the parent of the struct, and an
+/// embedded field is not a data field.
+#[test]
+fn the_project_route_says_which_go_struct_embeds_which() {
+    let (dir, _files) = project(&[("models.go", GO_MODEL_GO)]);
+
+    let edges = inherits_edges(&project_route(dir.path()));
+
+    assert_eq!(
+        edges,
+        vec!["Dog -> Animal".to_string()],
+        "an embedded `Animal` names the parent of `Dog`: {edges:?}"
+    );
+}

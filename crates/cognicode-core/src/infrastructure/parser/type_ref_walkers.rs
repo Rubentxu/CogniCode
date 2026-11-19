@@ -262,12 +262,20 @@ pub fn walk_go_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRef
                                 if field.kind() != "field_declaration" {
                                     continue;
                                 }
-                                // field_declaration has `type` field
+                                // field_declaration has `type` field;
+                                // a field WITHOUT a name is an embedded
+                                // field: the struct declares the type as
+                                // a parent, not as data it holds.
                                 if let Some(ftype) = field.child_by_field_name("type") {
+                                    let is_embedded = field.child_by_field_name("name").is_none();
                                     collect_type_names(
                                         &ftype,
                                         source,
-                                        TypeRefContext::FieldType,
+                                        if is_embedded {
+                                            TypeRefContext::Supertype
+                                        } else {
+                                            TypeRefContext::FieldType
+                                        },
                                         &mut refs,
                                     );
                                 }
@@ -700,9 +708,30 @@ pub fn walk_ruby_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
 
     match node_type {
         "class" | "module" => {
-            // Ruby: `class Foo < Bar` — superclass is in `parent` field
-            if let Some(parent) = node.child_by_field_name("parent") {
-                collect_type_names(&parent, source, TypeRefContext::TraitBound, &mut refs);
+            // Ruby: `class Foo < Bar` — tree-sitter-ruby puts the parent
+            // under the `superclass` field, wrapped in a `superclass`
+            // node. The old reader looked for a `parent` field, which the
+            // grammar does not emit, so it said nothing at all. The parent
+            // is written as a `constant` or a `scope_resolution`, kinds
+            // `collect_type_names` does not collect, so the walker names
+            // the parent itself. A `module Foo` declares no parent: the
+            // field is absent.
+            if let Some(wrapper) = node.child_by_field_name("superclass") {
+                // The wrapper carries the `<` operator in its text; the
+                // parent itself is the one named child under it.
+                let parent = (0..wrapper.child_count())
+                    .filter_map(|i| wrapper.child(i))
+                    .find(|c| c.is_named())
+                    .unwrap_or(wrapper);
+                let name = simple_type_name(&parent, source);
+                if !name.is_empty() {
+                    refs.push(TypeRef {
+                        target_name: name,
+                        context: TypeRefContext::Supertype,
+                        line: parent.start_position().row as u32 + 1,
+                        implemented_type: None,
+                    });
+                }
             }
         }
         // Ruby has no type annotations for methods/params (duck-typed)
@@ -761,23 +790,13 @@ pub fn walk_php_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeRe
                 let child = node.child(i).unwrap();
                 let kind = child.kind();
                 if kind == "base_clause" || kind == "class_interface_clause" {
+                    // `extends Bar` and `implements Baz, Quux` name
+                    // parents, not bounds: the class declares who it
+                    // inherits from.
                     for j in 0..child.child_count() {
                         let base = child.child(j).unwrap();
-                        if base.is_named() && base.kind() != "named_type" {
-                            collect_type_names(
-                                &base,
-                                source,
-                                TypeRefContext::TraitBound,
-                                &mut refs,
-                            );
-                        }
-                        if base.kind() == "named_type" {
-                            collect_type_names(
-                                &base,
-                                source,
-                                TypeRefContext::TraitBound,
-                                &mut refs,
-                            );
+                        if base.is_named() {
+                            collect_type_names(&base, source, TypeRefContext::Supertype, &mut refs);
                         }
                     }
                 }
@@ -884,7 +903,7 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
                             if !is_primitive(&name) && !name.is_empty() {
                                 refs.push(TypeRef {
                                     target_name: name,
-                                    context: TypeRefContext::TraitBound,
+                                    context: TypeRefContext::Supertype,
                                     line: child.start_position().row as u32 + 1,
                                     implemented_type: None,
                                 });
@@ -1166,6 +1185,7 @@ fn collect_field_types_java(node: &tree_sitter::Node, source: &[u8], out: &mut V
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use tree_sitter::Parser;
 
@@ -1436,19 +1456,104 @@ mod tests {
         );
     }
 
+    /// The focal test for the CGH-175 contradiction: the message of
+    /// 2a6b79be claims Ruby already published a parent; main's Ruby
+    /// reader emitted the superclass as a bound, which no route turns
+    /// into an `Inherits` edge. A declared parent must come out as a
+    /// supertype, named by its last path segment.
     #[test]
-    fn test_walk_ruby_type_refs_class() {
-        // Ruby has no static type annotations, but we extract inheritance
+    fn test_walk_ruby_type_refs_class_parent_is_a_supertype() {
         let source = "class User < ActiveRecord::Base\nend";
         test_walker(
             source,
             walk_ruby_type_refs,
             "class",
-            |_refs| {
-                // Ruby is dynamically typed — no params/return types to extract
-                // We just verify no panic occurs
+            |refs| {
+                let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
+                assert_eq!(names, ["Base"], "{refs:?}");
+                assert!(
+                    refs.iter().all(|r| r.context == TypeRefContext::Supertype),
+                    "{refs:?}"
+                );
             },
             tree_sitter_ruby::LANGUAGE.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_ruby_type_refs_module_declares_no_parent() {
+        let source = "module Searchable\nend";
+        test_walker(
+            source,
+            walk_ruby_type_refs,
+            "module",
+            |refs| {
+                assert!(refs.is_empty(), "a module names no parent: {refs:?}");
+            },
+            tree_sitter_ruby::LANGUAGE.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_php_type_refs_class_parent_is_a_supertype() {
+        let source = "<?php\nclass Admin extends User implements Verifiable, Auditable { }";
+        test_walker(
+            source,
+            walk_php_type_refs,
+            "class_declaration",
+            |refs| {
+                let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
+                assert_eq!(names, ["User", "Verifiable", "Auditable"], "{refs:?}");
+                assert!(
+                    refs.iter().all(|r| r.context == TypeRefContext::Supertype),
+                    "{refs:?}"
+                );
+            },
+            tree_sitter_php::LANGUAGE_PHP.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_swift_type_refs_class_parent_is_a_supertype() {
+        let source = "class User: Model, Serializable { }";
+        test_walker(
+            source,
+            walk_swift_type_refs,
+            "class_declaration",
+            |refs| {
+                let parents: Vec<_> = refs
+                    .iter()
+                    .filter(|r| r.context == TypeRefContext::Supertype)
+                    .map(|r| r.target_name.as_str())
+                    .collect();
+                assert_eq!(parents, ["Model", "Serializable"], "{refs:?}");
+            },
+            tree_sitter_swift::LANGUAGE.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_go_type_refs_embedded_field_is_a_supertype() {
+        let source = "type Admin struct {\n\tUser\n\tName string\n}";
+        test_walker(
+            source,
+            walk_go_type_refs,
+            "type_spec",
+            |refs| {
+                let parents: Vec<_> = refs
+                    .iter()
+                    .filter(|r| r.context == TypeRefContext::Supertype)
+                    .map(|r| r.target_name.as_str())
+                    .collect();
+                let fields: Vec<_> = refs
+                    .iter()
+                    .filter(|r| r.context == TypeRefContext::FieldType)
+                    .map(|r| r.target_name.as_str())
+                    .collect();
+                assert_eq!(parents, ["User"], "{refs:?}");
+                assert_eq!(fields, ["string"], "a named field is data: {refs:?}");
+            },
+            tree_sitter_go::LANGUAGE.into(),
         );
     }
 
