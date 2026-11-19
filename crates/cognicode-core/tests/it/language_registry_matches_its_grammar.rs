@@ -107,6 +107,40 @@ fn every_declared_node_kind_is_produced_by_its_grammar() {
 }
 
 #[test]
+fn every_declared_macro_shape_kind_is_produced_by_its_grammar() {
+    let mut offenders: Vec<String> = Vec::new();
+
+    for config in LanguageConfig::all() {
+        let grammar = (config.ts_language)();
+        let kinds = node_kinds(&grammar);
+        let Some(shape) = config.language.macro_call_shape() else {
+            continue;
+        };
+        for (category, declared) in [
+            ("macro", shape.macro_types),
+            ("macro definition", shape.definition_types),
+            ("macro callee", shape.callee_types),
+            ("macro argument", shape.argument_types),
+        ] {
+            for kind in declared {
+                if !kinds.contains(kind) {
+                    offenders.push(format!(
+                        "{:?} declares `{kind}` as {category}, and its grammar produces no such node",
+                        config.language
+                    ));
+                }
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "the registry claims macro node kinds the grammar does not produce:\n  {}",
+        offenders.join("\n  ")
+    );
+}
+
+#[test]
 fn every_declared_callee_field_exists_in_its_grammar() {
     let mut offenders: Vec<String> = Vec::new();
 

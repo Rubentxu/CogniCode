@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
 use crate::domain::value_objects::Language;
+use crate::infrastructure::parser::macro_calls;
 use crate::infrastructure::parser::naming;
 
 // Thread-local cache of TreeSitterParser instances per language.
@@ -1020,6 +1021,32 @@ impl TreeSitterParser {
                 });
             }
 
+            // The calls written in the body of a macro. The grammar does
+            // not parse that body as expressions, so the reader reads it as
+            // a token tree: the name of the callee and the list of
+            // arguments right after it.
+            if let Some(shape) = self.language.macro_call_shape() {
+                if shape.macro_types.contains(&current.kind()) {
+                    for call in macro_calls::calls_in_body(&current, source.as_bytes(), &shape) {
+                        let Some(callee) = self.callee_from_text(&call.text) else {
+                            continue;
+                        };
+                        relationships.push(FoundCall {
+                            caller: caller_symbol.clone(),
+                            callee,
+                            line: call.line,
+                        });
+                    }
+                }
+
+                // The body of a macro definition is expanded wherever the
+                // macro is used: a call written in it is not a call of the
+                // function that holds the definition.
+                if shape.definition_types.contains(&current.kind()) {
+                    continue;
+                }
+            }
+
             let cc = current.child_count();
             for i in (0..cc).rev() {
                 if let Some(child) = current.child(i) {
@@ -1042,12 +1069,22 @@ impl TreeSitterParser {
         // The name, the qualifier and the head are three readings of the
         // same text, and the text is read once.
         let text = naming::callee_text(&call_node, bytes, fields)?;
-        let name = naming::clean_callee_name(&text);
+        self.callee_from_text(&text)
+    }
+
+    /// What the text of a call calls.
+    ///
+    /// The name, the type that qualifies it and the head of its path are
+    /// three readings of the same text. A call written in the body of a
+    /// macro is read by the same rules: the body spells the callee as code
+    /// spells it, and the text is what the rules read.
+    fn callee_from_text(&self, text: &str) -> Option<Callee> {
+        let name = naming::clean_callee_name(text);
         if name.is_empty() {
             return None;
         }
         let type_qualifier = if self.language.spells_types_with_capitals() {
-            naming::type_qualifier_of(&text)
+            naming::type_qualifier_of(text)
         } else {
             None
         };
@@ -1055,12 +1092,12 @@ impl TreeSitterParser {
         // tells two types of the same name apart, and it is `Some` exactly
         // when the qualifier is.
         let qualifier_path = if self.language.spells_types_with_capitals() {
-            naming::qualifier_path_of(&text)
+            naming::qualifier_path_of(text)
         } else {
             None
         };
-        let path_head = naming::path_head_of(&text);
-        let receiver = naming::receiver_of(&text).map(str::to_string);
+        let path_head = naming::path_head_of(text);
+        let receiver = naming::receiver_of(text).map(str::to_string);
         Some(Callee {
             name,
             type_qualifier,
@@ -2436,5 +2473,94 @@ mod gradle_build_reading {
     fn a_register_without_a_plain_label_or_a_body_or_on_another_object_is_not_a_task() {
         let odd = "tasks.register(name) { }\ntasks.register(\"a$b\") { }\ntasks.register('x')\nother.register('y') { }\ntasks.remove('z') { }\n";
         assert_eq!(tasks(odd, "build.gradle"), Vec::<String>::new());
+    }
+}
+
+#[cfg(test)]
+mod rust_macro_reading {
+    use super::*;
+
+    /// The names the calls of a Rust file name.
+    fn calls(source: &str) -> Vec<String> {
+        let parser = TreeSitterParser::new(Language::Rust).unwrap();
+        let tree = parser.parse_tree(source).unwrap();
+        let mut found: Vec<String> = parser
+            .find_call_sites_in_tree(&tree, source, "f")
+            .unwrap()
+            .iter()
+            .map(|c| c.target.clone())
+            .collect();
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn a_call_written_inside_a_macro_is_a_call() {
+        let found = calls("fn check() {\n    assert_eq!(reload(\"a=1\").entries.len(), 1);\n}\n");
+        assert!(
+            found.iter().any(|name| name == "reload"),
+            "the call inside the macro is not published: {found:?}"
+        );
+    }
+
+    #[test]
+    fn a_macro_invoked_inside_a_macro_is_not_a_call() {
+        let found = calls("fn check() {\n    assert!(matches!(x, Foo::Bar));\n}\n");
+        assert!(
+            !found.iter().any(|name| name == "matches"),
+            "a macro is not a call: {found:?}"
+        );
+    }
+
+    #[test]
+    fn two_names_in_a_macro_are_not_calls() {
+        let found = calls("fn check() {\n    assert_eq!(left, right);\n}\n");
+        assert!(
+            !found.iter().any(|name| name == "left" || name == "right"),
+            "a name without an argument list is not a call: {found:?}"
+        );
+    }
+
+    /// The same text, read in code and read in the body of a macro, is
+    /// read the same way.
+    ///
+    /// The body of a macro is not parsed as expressions, so the reader
+    /// reads it as a token tree. A reader that named more calls in the
+    /// body than in the code would publish two different graphs for the
+    /// same project, and the drift would only be visible in the answers.
+    #[test]
+    fn the_calls_of_a_macro_body_are_the_calls_the_same_text_publishes_in_code() {
+        for (code, macro_body) in [
+            ("let _ = Some(f());", "assert_eq!(Some(f()), 1);"),
+            ("let _ = foo::bar();", "assert_eq!(foo::bar(), 1);"),
+            ("let _ = self.helper();", "assert_eq!(self.helper(), 1);"),
+            ("let _ = x.len();", "assert_eq!(x.len(), 1);"),
+            (
+                "let _ = reload(\"a=1\").entries.len();",
+                "assert_eq!(reload(\"a=1\").entries.len(), 1);",
+            ),
+        ] {
+            let in_code = calls(&format!("fn check() {{\n    {code}\n}}\n"));
+            let in_macro = calls(&format!("fn check() {{\n    {macro_body}\n}}\n"));
+            assert_eq!(
+                in_macro, in_code,
+                "the body of a macro is read differently than the code it spells: {macro_body}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_body_of_a_macro_definition_is_not_a_call_site() {
+        let found = calls(
+            "fn check() {\n    macro_rules! helper {\n        ($e:expr) => { assert_eq!(inner($e), 1) };\n    }\n    helper!(reload(\"a=1\"));\n}\n",
+        );
+        assert!(
+            !found.iter().any(|name| name == "inner"),
+            "a definition is expanded wherever the macro is used: {found:?}"
+        );
+        assert!(
+            found.iter().any(|name| name == "reload"),
+            "the call at the invocation site is a call: {found:?}"
+        );
     }
 }

@@ -106,6 +106,25 @@ pub struct LanguageSymbols {
     pub import_callees: &'static [&'static str],
 }
 
+/// The node kinds that describe a call written inside a macro body.
+///
+/// A grammar does not parse the body of a macro as expressions: it hands it
+/// over as a token tree, and the reader has to read it as it finds it. A
+/// language whose grammar has no such thing declares no shape, and the
+/// reader walks no macro body at all.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MacroCallShape {
+    /// Node kinds that invoke a macro: their body may hold calls.
+    pub macro_types: &'static [&'static str],
+    /// Node kinds that declare a macro. The body of a definition is
+    /// expanded wherever the macro is used, so it is not a call site.
+    pub definition_types: &'static [&'static str],
+    /// Node kinds that carry the name of a call.
+    pub callee_types: &'static [&'static str],
+    /// Node kinds that hold the arguments of a call.
+    pub argument_types: &'static [&'static str],
+}
+
 /// How a language spells the name of a declaration.
 ///
 /// Most grammars put the name in a `name` field, and then the reader has
@@ -563,6 +582,25 @@ impl Language {
                 callee_fields: &[],
                 import_callees: &[],
             },
+        }
+    }
+
+    /// The shape of a call written inside a macro body, when the language's
+    /// grammar has one.
+    ///
+    /// A macro body is not parsed as code: the grammar hands it over as a
+    /// token tree, and a call written in it is a name whose next sibling is
+    /// the list of arguments. Only Rust's grammar shapes a macro body that
+    /// way today; every other language reads no macro body at all.
+    pub const fn macro_call_shape(self) -> Option<MacroCallShape> {
+        match self {
+            Language::Rust => Some(MacroCallShape {
+                macro_types: &["macro_invocation"],
+                definition_types: &["macro_definition"],
+                callee_types: &["identifier", "field_identifier"],
+                argument_types: &["token_tree"],
+            }),
+            _ => None,
         }
     }
 
