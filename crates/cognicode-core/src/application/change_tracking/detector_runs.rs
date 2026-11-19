@@ -784,7 +784,7 @@ fn projection_boundary(
     let details: BTreeSet<String> = match detector {
         ProductionDetector::FunctionDefinition => &[FUNCTION_KIND][..],
         ProductionDetector::TypeDefinition => &TYPE_KINDS[..],
-        ProductionDetector::UnprotectedBucket => return None,
+        ProductionDetector::UnprotectedBucket | ProductionDetector::UnusedHelmValue => return None,
     }
     .iter()
     .map(|detail| (*detail).to_string())
