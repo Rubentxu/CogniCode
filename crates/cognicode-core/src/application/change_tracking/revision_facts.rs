@@ -893,6 +893,7 @@ pub fn dependencies_on(index: &DetectorReuseIndex, base: SnapshotId) -> Vec<Exec
                 work,
                 execution: ExecutionId(0),
                 read_set,
+                read_scope: None,
             })
         })
         .collect()

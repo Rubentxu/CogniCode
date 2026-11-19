@@ -146,16 +146,19 @@ fn base_plan() -> AffectedWorkPlan {
                 work: work("detector.alpha"),
                 execution: ExecutionId(1),
                 read_set: [FactId(10)].into_iter().collect::<ReadSet>(),
+                read_scope: None,
             },
             ExecutionDependency {
                 work: work("detector.beta"),
                 execution: ExecutionId(2),
                 read_set: [FactId(50)].into_iter().collect::<ReadSet>(),
+                read_scope: None,
             },
             ExecutionDependency {
                 work: work("detector.gamma"),
                 execution: ExecutionId(3),
                 read_set: ReadSet::from_iter([]),
+                read_scope: None,
             },
         ],
     )

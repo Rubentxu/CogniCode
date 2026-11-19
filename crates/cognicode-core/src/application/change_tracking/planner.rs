@@ -43,6 +43,7 @@
 //! and WU1 [`FactDelta`] types. Writes nothing. The plan is a derived
 //! operational decision, never a canonical Fact.
 
+use super::read_scope::ReadScope;
 use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
 use crate::domain::evidence_kernel::semantic_diff::{FactChange, FactDelta, FactSemanticKey};
 use crate::domain::kernel_ids::ExecutionId;
@@ -83,6 +84,8 @@ pub struct ExecutionDependency {
     pub work: WorkId,
     pub execution: ExecutionId,
     pub read_set: ReadSet,
+    /// Revision-bound read scope; absence must be treated conservatively.
+    pub read_scope: Option<ReadScope>,
 }
 
 /// Structured reason a piece of work was placed in a [`WorkDisposition`].
@@ -455,6 +458,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -492,6 +496,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -524,6 +529,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[999]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -555,6 +561,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -594,6 +601,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rs,
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -620,6 +628,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unknown);
@@ -653,11 +662,13 @@ mod tests {
             work: make_work("ci.a"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.b"),
             execution: ExecutionId(2),
             read_set: rec_with(&[11]),
+            read_scope: None,
         };
 
         let p1 = plan_affected_work(&d1, &[dep_a.clone(), dep_b.clone()]);
@@ -691,6 +702,7 @@ mod tests {
             work: make_work("ci.test-suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10, 99]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unaffected);
@@ -738,6 +750,7 @@ mod tests {
             work: make_work("ci.aggregate-functions"),
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3, 4]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(
@@ -772,11 +785,13 @@ mod tests {
             work: make_work("ci.suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[999]),
+            read_scope: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.suite"),
             execution: ExecutionId(2),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep_a, dep_b]);
         assert_eq!(plan.decisions.len(), 1);
@@ -811,6 +826,7 @@ mod tests {
             work: make_work("ci.suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         // removed fact 10 was read → Affected. Added fact 50 would
@@ -880,6 +896,7 @@ mod tests {
             work: make_work("ci.suite"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10, 7_777]),
+            read_scope: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unaffected);
@@ -910,11 +927,13 @@ mod tests {
             work: make_work("ci.a"),
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
+            read_scope: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.b"),
             execution: ExecutionId(2),
             read_set: rec_with(&[11]),
+            read_scope: None,
         };
 
         let p1 = plan_affected_work(&d1, &[dep_a.clone(), dep_b.clone()]);
@@ -965,6 +984,7 @@ mod tests {
                 work: make_work("ci.x"),
                 execution: ExecutionId(1),
                 read_set: rec_with(read_facts),
+                read_scope: None,
             };
             let plan = plan_affected_work(&delta, &[dep]);
             assert_ne!(

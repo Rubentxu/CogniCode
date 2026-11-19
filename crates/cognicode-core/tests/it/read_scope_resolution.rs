@@ -108,6 +108,7 @@ fn a_scope_never_says_valid_where_the_planner_proves_the_read_stale() {
                 work: WorkId::new(NamespacedName::new("detector.reader").expect("name")),
                 execution: ExecutionId(0),
                 read_set: [fact].into_iter().collect::<ReadSet>(),
+                read_scope: None,
             };
             let planned = plan_affected_work(&delta, &[dependency]).decisions[0].disposition;
             let scope = ReadScope::from_reads([fact], false, &base, ReadBreadth::Pointwise);
@@ -134,6 +135,46 @@ fn a_scope_never_says_valid_where_the_planner_proves_the_read_stale() {
             );
         }
     }
+}
+
+#[test]
+fn pointwise_scope_proves_exclusion_but_unscoped_planner_remains_unknown() {
+    let base = revision(1, None);
+    let mut head = revision(2, None);
+    head.facts
+        .push(fact(7, 40, "core:defines", "src/b.rs:delta:4", 2));
+    head.path_facts
+        .get_mut(&PathKey::new("src/b.rs").expect("path"))
+        .expect("file")
+        .push(FactId(7));
+    let delta = compute_fact_delta(
+        base.snapshot,
+        base.facts.iter().cloned(),
+        head.snapshot,
+        head.facts.iter().cloned(),
+    )
+    .expect("delta");
+    let changed = ChangedFacts::from_delta(&delta, &base, &head);
+    let read = call_fact_of("alpha");
+    let scope = ReadScope::from_reads([read], false, &base, ReadBreadth::Pointwise);
+    assert_eq!(
+        resolve_reads(Some(&scope), &changed).verdict,
+        ReadVerdict::Valid
+    );
+    assert_eq!(
+        resolve_reads(None, &changed).verdict,
+        ReadVerdict::Revalidate
+    );
+    let dependency = ExecutionDependency {
+        work: WorkId::new(NamespacedName::new("detector.reader").expect("name")),
+        execution: ExecutionId(0),
+        read_set: [read].into_iter().collect(),
+        read_scope: None,
+    };
+    assert_eq!(
+        plan_affected_work(&delta, &[dependency]).decisions[0].disposition,
+        WorkDisposition::Unknown
+    );
 }
 
 #[test]
