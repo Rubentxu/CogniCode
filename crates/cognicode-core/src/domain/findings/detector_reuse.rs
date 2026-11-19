@@ -239,6 +239,10 @@ pub struct DetectorRunIdentity {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DetectorRunRecord {
     pub identity: DetectorRunIdentity,
+    /// The complete predicate boundary of the actual facts projection, when
+    /// that projection can describe one conservatively.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_boundary: Option<DetectorReadBoundary>,
     /// The facts the run read (its semantic dependencies).
     pub observed_facts: BTreeSet<FactId>,
     /// Lineage completeness: a truncated read-set proves nothing
@@ -247,6 +251,34 @@ pub struct DetectorRunRecord {
     /// The snapshot whose evidence backs the findings.
     pub produced_snapshot: SnapshotId,
     pub findings: Vec<CachedFinding>,
+}
+
+/// A detector-specific boundary derived from the projection that selected
+/// observed facts. Missing boundaries are intentionally conservative.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DetectorReadBoundary {
+    pub schema: String,
+    pub identity: DetectorRunIdentity,
+    pub detector_id: DetectorId,
+    pub snapshot: SnapshotId,
+    pub predicates: BTreeSet<String>,
+    pub details: BTreeSet<String>,
+    pub complete: bool,
+}
+
+pub const DETECTOR_READ_BOUNDARY_SCHEMA: &str = "cognicode.detector-read-boundary/v1";
+
+impl DetectorReadBoundary {
+    pub fn is_supported_for(&self, record: &DetectorRunRecord) -> bool {
+        self.schema == DETECTOR_READ_BOUNDARY_SCHEMA
+            && self.identity == record.identity
+            && self.detector_id == record.identity.detector_id
+            && self.snapshot == record.produced_snapshot
+            && self.complete
+            && !record.observed_truncated
+            && !self.predicates.is_empty()
+            && !self.details.is_empty()
+    }
 }
 
 /// One input layer of [`DetectorRunIdentity`].

@@ -61,9 +61,9 @@ use crate::domain::findings::admission::{AdmissionSource, DetectorAdmission, Exe
 use crate::domain::findings::ast_backend::{AstBackend, AstConstruct, AstInput, AstUnit};
 use crate::domain::findings::detector_ir::{DetectorIr, DetectorStep, SubjectPattern};
 use crate::domain::findings::detector_reuse::{
-    CachedFinding, DetectorReuseIndex, DetectorRunIdentity, DetectorRunRecord, InvalidationLevel,
-    OutputLocation, ReboundFinding, ReuseDecision, cache_observation, rebind_candidate,
-    reuse_decision, semantic_fingerprint,
+    CachedFinding, DETECTOR_READ_BOUNDARY_SCHEMA, DetectorReadBoundary, DetectorReuseIndex,
+    DetectorRunIdentity, DetectorRunRecord, InvalidationLevel, OutputLocation, ReboundFinding,
+    ReuseDecision, cache_observation, rebind_candidate, reuse_decision, semantic_fingerprint,
 };
 use crate::domain::findings::execution::{
     AnalysisInput, BackendRegistry, DetectorExecutor, ExecutionRequest,
@@ -504,6 +504,7 @@ pub fn run_detector(
 
     Ok(DetectorRunRecord {
         identity,
+        read_boundary: projection_boundary(detector, produced, facts.snapshot),
         observed_facts: observed,
         observed_truncated: false,
         produced_snapshot: facts.snapshot,
@@ -658,6 +659,31 @@ fn levels_word(levels: &[InvalidationLevel]) -> String {
         .map(|level| format!("{level:?}").to_lowercase())
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn projection_boundary(
+    detector: ProductionDetector,
+    produced: &ProducedRevision,
+    snapshot: SnapshotId,
+) -> Option<DetectorReadBoundary> {
+    let details: BTreeSet<String> = match detector {
+        ProductionDetector::FunctionDefinition => &[FUNCTION_KIND][..],
+        ProductionDetector::TypeDefinition => &TYPE_KINDS[..],
+        ProductionDetector::UnprotectedBucket => return None,
+    }
+    .iter()
+    .map(|detail| (*detail).to_string())
+    .collect();
+    let identity = current_identity(detector).ok()?;
+    Some(DetectorReadBoundary {
+        schema: DETECTOR_READ_BOUNDARY_SCHEMA.to_string(),
+        detector_id: identity.detector_id.clone(),
+        identity,
+        snapshot,
+        predicates: [DEFINES.to_string()].into_iter().collect(),
+        details,
+        complete: produced.coverage.is_complete(),
+    })
 }
 
 /// `detector`'s findings on `head`, reusing `prior` when it is proven safe
@@ -1003,6 +1029,18 @@ mod tests {
         assert_eq!(record.findings.len(), 2, "alpha and beta");
         assert_eq!(record.produced_snapshot, base.facts.snapshot);
         assert!(!record.observed_truncated);
+        let boundary = record
+            .read_boundary
+            .as_ref()
+            .expect("supported projection boundary");
+        assert_eq!(boundary.detector_id, record.identity.detector_id);
+        assert_eq!(boundary.snapshot, base.facts.snapshot);
+        assert_eq!(boundary.predicates, BTreeSet::from([DEFINES.to_string()]));
+        assert_eq!(
+            boundary.details,
+            BTreeSet::from([FUNCTION_KIND.to_string()])
+        );
+        assert!(boundary.complete);
         let defined: BTreeSet<FactId> = base
             .facts
             .facts
@@ -1032,6 +1070,121 @@ mod tests {
                 .iter()
                 .all(|f| matches!(f.observation, CachedObservation::Advisory { .. })),
             "a candidate detector over AST evidence is advisory, never promoted"
+        );
+    }
+
+    #[test]
+    fn supported_projection_boundary_survives_record_and_scope_round_trip() {
+        let produced = produce(&fake(), "main");
+        let record = fresh_run(&produced, &workspace()).expect("run");
+        let scope = crate::application::change_tracking::read_scope::ReadScope::from_run(
+            &record,
+            &produced.facts,
+            crate::application::change_tracking::read_scope::ReadBreadth::Aggregate,
+        )
+        .expect("complete, supported boundary");
+        let record_wire = serde_json::to_value(&record).expect("record wire");
+        let scope_wire = serde_json::to_value(&scope).expect("scope wire");
+        let restored: DetectorRunRecord = serde_json::from_value(record_wire).expect("record");
+        let restored_scope: crate::application::change_tracking::read_scope::ReadScope =
+            serde_json::from_value(scope_wire).expect("scope");
+
+        assert_eq!(restored, record);
+        assert_eq!(restored_scope, scope);
+        assert!(
+            restored
+                .read_boundary
+                .as_ref()
+                .unwrap()
+                .is_supported_for(&restored)
+        );
+    }
+
+    #[test]
+    fn a_boundary_cannot_be_used_after_detector_identity_changes() {
+        let produced = produce(&fake(), "main");
+        let mut record = fresh_run(&produced, &workspace()).expect("run");
+        record.identity.version.push_str("-changed");
+
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &record,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
+        );
+
+        record.identity = record.read_boundary.as_ref().unwrap().identity.clone();
+        record.identity.digests.logic =
+            crate::domain::findings::digest::DetectorDigest::from_content("changed logic");
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &record,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn incomplete_or_truncated_boundaries_never_publish_scopes() {
+        let produced = produce(&fake(), "main");
+        let mut record = fresh_run(&produced, &workspace()).expect("run");
+        record.read_boundary.as_mut().unwrap().complete = false;
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &record,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
+        );
+
+        record.read_boundary.as_mut().unwrap().complete = true;
+        record.observed_truncated = true;
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &record,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
+        );
+
+        record.observed_truncated = false;
+        record.read_boundary.as_mut().unwrap().schema =
+            "cognicode.detector-read-boundary/v99".to_string();
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &record,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn legacy_run_records_decode_without_a_trusted_boundary() {
+        let fake = fake();
+        let produced = produce(&fake, "main");
+        let record = fresh_run(&produced, &workspace()).expect("run");
+        let mut wire = serde_json::to_value(record).expect("serialize");
+        wire.as_object_mut()
+            .expect("record object")
+            .remove("read_boundary");
+
+        let legacy: DetectorRunRecord = serde_json::from_value(wire).expect("legacy record");
+        assert!(legacy.read_boundary.is_none());
+        assert!(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &legacy,
+                &produced.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Pointwise,
+            )
+            .is_none()
         );
     }
 
@@ -1456,6 +1609,10 @@ mod tests {
         assert_eq!(defined.len(), 1, "only Point is a type definition");
         assert_eq!(record.findings.len(), 1);
         assert_eq!(
+            record.read_boundary.as_ref().unwrap().details,
+            TYPE_KINDS.iter().map(|detail| detail.to_string()).collect()
+        );
+        assert_eq!(
             record.observed_facts, defined,
             "the read-set is exactly the type definitions the detector was handed"
         );
@@ -1847,6 +2004,10 @@ mod tests {
         let fake = terraform_fake();
         let head = produce(&fake, "protected");
         let record = fresh_run_of(BUCKETS, &head).expect("run");
+        assert!(
+            record.read_boundary.is_none(),
+            "Terraform predicate completeness is unsupported"
+        );
 
         let consulted: BTreeSet<String> = head
             .facts

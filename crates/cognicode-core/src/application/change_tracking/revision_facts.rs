@@ -1088,6 +1088,7 @@ mod tests {
             let observed = base.facts.path_facts[&path(file)].iter().copied().collect();
             index.remember(DetectorRunRecord {
                 identity: identity(detector),
+                read_boundary: None,
                 observed_facts: observed,
                 observed_truncated: truncated,
                 produced_snapshot: base.facts.snapshot,

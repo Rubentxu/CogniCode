@@ -98,6 +98,7 @@ fn record(observation: GuardObservation, observed: &[u64], truncated: bool) -> D
     );
     DetectorRunRecord {
         identity: identity("v1"),
+        read_boundary: None,
         observed_facts: observed.iter().map(|f| FactId(*f)).collect(),
         observed_truncated: truncated,
         produced_snapshot: SnapshotId(1),

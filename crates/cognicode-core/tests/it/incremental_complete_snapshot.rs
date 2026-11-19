@@ -91,6 +91,7 @@ fn finding(key: &str, subject: &str) -> CachedFinding {
 fn record(key: &str, produced: SnapshotId, truncated: bool) -> DetectorRunRecord {
     DetectorRunRecord {
         identity: identity(key),
+        read_boundary: None,
         observed_facts: [FactId(50)].into_iter().collect(),
         observed_truncated: truncated,
         produced_snapshot: produced,
