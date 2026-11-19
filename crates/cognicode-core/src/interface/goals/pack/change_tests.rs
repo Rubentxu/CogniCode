@@ -10,6 +10,9 @@ use super::*;
 use crate::application::context_pack::TokenMeasure;
 
 const LIB: &str = "pub fn parse(input: &str) -> u32 {\n    input.len() as u32\n}\n\nfn helper(x: u32) -> u32 {\n    x + 1\n}\n\npub fn run() -> u32 {\n    parse(\"x\") + helper(1)\n}\n\n#[test]\nfn parse_counts_bytes() {\n    let n = parse(\"ab\");\n    assert_eq!(n, 2);\n}\n";
+/// A fixture whose test reaches the changed symbol through another symbol:
+/// the path the pack publishes has more than one hop.
+const DEEP: &str = "pub fn parse(input: &str) -> u32 {\n    input.len() as u32\n}\n\nfn helper(x: u32) -> u32 {\n    parse(\"x\") + x\n}\n\n#[test]\nfn parse_counts_bytes_through_helper() {\n    let n = helper(1);\n    assert_eq!(n, 2);\n}\n";
 const OTHER: &str = "pub fn unrelated() -> u32 {\n    1\n}\n";
 
 fn git(repo: &Path, args: &[&str]) {
@@ -82,6 +85,28 @@ fn reason_of<'a>(answer: &'a Value, name: &str) -> &'a str {
         .unwrap_or_else(|| panic!("`{name}` is not in {answer}"))["reason"]
         .as_str()
         .unwrap()
+}
+
+fn detail_of<'a>(answer: &'a Value, name: &str) -> &'a str {
+    answer["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["name"] == name)
+        .unwrap_or_else(|| panic!("`{name}` is not in {answer}"))["reason_detail"]
+        .as_str()
+        .unwrap()
+}
+
+/// The names of the symbols of a path the pack published.
+fn hops_of(detail: &str) -> Vec<String> {
+    detail
+        .split(" through ")
+        .nth(1)
+        .unwrap_or_else(|| panic!("the detail names no path: {detail}"))
+        .split(" -> ")
+        .map(|hop| hop.split(':').nth(1).unwrap_or(hop).to_string())
+        .collect()
 }
 
 fn gap_kinds(answer: &Value) -> Vec<String> {
@@ -193,6 +218,37 @@ fn a_signature_change_selects_consumers_and_tests_and_a_private_body_change_does
         "missing coverage is a gap, not safety: {private}"
     );
     assert_eq!(private["status"], "partial");
+}
+
+#[test]
+fn the_path_of_the_test_that_reaches_the_change_is_the_path_of_the_graph() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q", "-b", "main"]);
+    write(repo, "src/lib.rs", DEEP);
+    git(repo, &["add", "-A"]);
+    git(repo, &["commit", "-q", "-m", "base"]);
+
+    write(
+        repo,
+        "src/lib.rs",
+        &DEEP.replace(
+            "fn parse(input: &str) -> u32",
+            "fn parse(input: &str) -> u64",
+        ),
+    );
+
+    let answer = run_pack(repo, json!({"change_scope": "working_tree"})).unwrap();
+
+    assert_eq!(
+        reason_of(&answer, "parse_counts_bytes_through_helper"),
+        "test_of_change"
+    );
+    assert_eq!(
+        hops_of(detail_of(&answer, "parse_counts_bytes_through_helper")),
+        ["parse_counts_bytes_through_helper", "helper", "parse"],
+        "the published path is the one the graph holds"
+    );
 }
 
 #[test]

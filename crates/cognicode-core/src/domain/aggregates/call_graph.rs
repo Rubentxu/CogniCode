@@ -5,7 +5,7 @@
 #![allow(clippy::type_complexity)]
 
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use super::symbol::Symbol;
@@ -553,14 +553,19 @@ impl CallGraph {
         self.find_path(source, target).is_some()
     }
 
-    /// Finds a path from source to target if one exists (BFS)
+    /// Finds the shortest path from source to target if one exists (BFS)
+    ///
+    /// The path is made of edges the graph holds: every two consecutive
+    /// symbols of it are joined by one, and no symbol appears twice. It
+    /// starts at `source` and ends at `target`.
     pub fn find_path(&self, source: &SymbolId, target: &SymbolId) -> Option<Vec<SymbolId>> {
         self.find_path_with_max_depth(source, target, 0)
     }
 
-    /// Finds a path from source to target if one exists, limited by max_depth (BFS)
+    /// Finds the shortest path from source to target if one exists, limited by max_depth (BFS)
     ///
-    /// If max_depth is 0, no depth limit is applied.
+    /// If max_depth is 0, no depth limit is applied. A path of exactly
+    /// `max_depth` edges is found; a longer one is not.
     // TODO(Phase 4b): Delegate to petgraph::algo::astar when CallGraph migrates to StableGraph internally
     pub fn find_path_with_max_depth(
         &self,
@@ -573,30 +578,26 @@ impl CallGraph {
         }
         let mut visited = HashSet::new();
         let mut predecessor: HashMap<SymbolId, SymbolId> = HashMap::new();
-        let mut queue = vec![(source.clone(), 0)];
+        // A breadth-first frontier: the first time the walk meets the target
+        // is at the smallest number of hops, so the path that comes out is
+        // the shortest one the graph holds.
+        let mut frontier = VecDeque::from([(source.clone(), 0usize)]);
         visited.insert(source.clone());
 
-        while let Some((current, depth)) = queue.pop() {
+        while let Some((current, depth)) = frontier.pop_front() {
             if max_depth > 0 && depth >= max_depth {
                 continue;
             }
-            if let Some(dependencies) = self.edges.get(&current) {
-                for (next, _) in dependencies.keys() {
-                    if next == target {
-                        let mut path = vec![target.clone()];
-                        let mut step = &current;
-                        while let Some(prev) = predecessor.get(step) {
-                            path.push(prev.clone());
-                            step = prev;
-                        }
-                        path.push(source.clone());
-                        path.reverse();
-                        return Some(path);
-                    }
-                    if visited.insert(next.clone()) {
-                        predecessor.insert(next.clone(), current.clone());
-                        queue.push((next.clone(), depth + 1));
-                    }
+            let Some(dependencies) = self.edges.get(&current) else {
+                continue;
+            };
+            for (next, _) in dependencies.keys() {
+                if next == target {
+                    return Some(path_to_target(&predecessor, &current, target));
+                }
+                if visited.insert(next.clone()) {
+                    predecessor.insert(next.clone(), current.clone());
+                    frontier.push_back((next.clone(), depth + 1));
                 }
             }
         }
@@ -1479,6 +1480,27 @@ fn mermaid_edge_label(dep_type: &DependencyType) -> &'static str {
     }
 }
 
+/// The path a breadth-first walk took to reach `target`.
+///
+/// The walk says which symbol every discovered symbol came from, so the
+/// path is read backwards from the last hop: the symbol whose edge reaches
+/// the target, and every symbol before it. The walk starts at a symbol
+/// that has no predecessor, so the path ends where the walk started.
+fn path_to_target(
+    predecessor: &HashMap<SymbolId, SymbolId>,
+    last: &SymbolId,
+    target: &SymbolId,
+) -> Vec<SymbolId> {
+    let mut path = vec![target.clone(), last.clone()];
+    let mut step = last.clone();
+    while let Some(previous) = predecessor.get(&step) {
+        path.push(previous.clone());
+        step = previous.clone();
+    }
+    path.reverse();
+    path
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2072,6 +2094,114 @@ mod tests {
         let path = graph.find_path(&id1, &id3);
         assert!(path.is_some());
         assert_eq!(path.unwrap().len(), 3);
+    }
+
+    /// A graph with two routes from `a` to `c`: the short one (`a -> b -> c`)
+    /// and the long one (`a -> d -> e -> c`). The path that comes out is the
+    /// short one, every two consecutive symbols of it are joined by an edge
+    /// the graph holds, and no symbol appears twice.
+    #[test]
+    fn the_path_is_the_shortest_one_and_holds_only_edges_of_the_graph() {
+        let mut graph = CallGraph::new();
+        let ids: Vec<SymbolId> = ["a", "b", "c", "d", "e"]
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                graph.add_symbol(Symbol::new(
+                    *name,
+                    SymbolKind::Function,
+                    Location::new("test.rs", index as u32 + 1, 1),
+                ))
+            })
+            .collect();
+        let (a, b, c, d, e) = (&ids[0], &ids[1], &ids[2], &ids[3], &ids[4]);
+        for (from, to) in [(a, b), (b, c), (a, d), (d, e), (e, c)] {
+            graph
+                .add_dependency(from, to, DependencyType::Calls)
+                .unwrap();
+        }
+
+        let path = graph
+            .find_path(a, c)
+            .expect("the graph holds a path from a to c");
+
+        assert_eq!(
+            path,
+            vec![a.clone(), b.clone(), c.clone()],
+            "the shortest path, not the first one the walk meets"
+        );
+        for pair in path.windows(2) {
+            assert!(
+                graph
+                    .dependencies(&pair[0])
+                    .any(|(dependency, _)| dependency == &pair[1]),
+                "{:?} -> {:?} is not an edge the graph holds",
+                pair[0],
+                pair[1]
+            );
+        }
+        let mut seen = HashSet::new();
+        assert!(
+            path.iter().all(|symbol| seen.insert(symbol.clone())),
+            "a path repeats a symbol: {path:?}"
+        );
+    }
+
+    /// The depth limit counts hops: a path of exactly `max_depth` edges is
+    /// found, a longer one is not, and a limit of zero bounds nothing.
+    #[test]
+    fn the_depth_limit_counts_the_hops_of_the_path() {
+        let mut graph = CallGraph::new();
+        let ids: Vec<SymbolId> = ["a", "b", "c"]
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                graph.add_symbol(Symbol::new(
+                    *name,
+                    SymbolKind::Function,
+                    Location::new("test.rs", index as u32 + 1, 1),
+                ))
+            })
+            .collect();
+        let (a, b, c) = (&ids[0], &ids[1], &ids[2]);
+        for (from, to) in [(a, b), (b, c)] {
+            graph
+                .add_dependency(from, to, DependencyType::Calls)
+                .unwrap();
+        }
+
+        assert_eq!(
+            graph.find_path_with_max_depth(a, c, 1),
+            None,
+            "one hop does not reach a symbol two hops away"
+        );
+        assert_eq!(
+            graph.find_path_with_max_depth(a, c, 2),
+            Some(vec![a.clone(), b.clone(), c.clone()]),
+            "two hops reach it"
+        );
+        assert_eq!(
+            graph.find_path_with_max_depth(a, c, 0),
+            Some(vec![a.clone(), b.clone(), c.clone()]),
+            "a limit of zero bounds nothing"
+        );
+    }
+
+    /// A symbol the graph does not hold is not reachable, and a symbol
+    /// reaches itself with a path of one.
+    #[test]
+    fn a_path_to_a_symbol_the_graph_does_not_hold_is_no_path() {
+        let mut graph = CallGraph::new();
+        let id = graph.add_symbol(Symbol::new(
+            "a",
+            SymbolKind::Function,
+            Location::new("test.rs", 1, 1),
+        ));
+        let missing = SymbolId::new("test.rs:missing:1:1");
+
+        assert_eq!(graph.find_path(&id, &missing), None);
+        assert_eq!(graph.find_path(&missing, &id), None);
+        assert_eq!(graph.find_path(&id, &id), Some(vec![id.clone()]));
     }
 
     #[test]

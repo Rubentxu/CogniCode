@@ -13,8 +13,8 @@
 //!   path of the graph that reaches it.
 //!
 //! It does not compute what a change affects: the graph owns that question
-//! and this reads its edges once. Reachability beyond a direct consumer is
-//! only followed to find tests.
+//! and answers it. Reachability beyond a direct consumer is only followed
+//! to find tests.
 //!
 //! ## What is not known is said
 //!
@@ -24,7 +24,7 @@
 //! every symbol, a file that could not be mapped. A gap is not an empty
 //! impact; it is the part of the question this answer cannot close.
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -326,10 +326,17 @@ fn consumers_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Opti
 
 /// The tests that reach `symbol`, nearest first, and the gap when there are
 /// more than the bound.
+///
+/// The graph owns the question: it says which symbols reach the changed one
+/// and what the shortest path from each of them is. A symbol the graph
+/// holds no path from does not reach it, and it is not offered.
 fn tests_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<ChangeGap>) {
-    let mut found: Vec<Candidate> = reaching_paths(graph, &symbol.id)
+    let mut found: Vec<Candidate> = graph
+        .find_all_dependents(&symbol.id)
         .into_iter()
-        .filter(|(id, _)| is_test(graph, id))
+        .filter(|id| id != &symbol.id)
+        .filter(|id| is_test(graph, id))
+        .filter_map(|id| graph.find_path(&id, &symbol.id).map(|path| (id, path)))
         .map(|(id, path)| Candidate {
             score: 1.0 / path.len().max(1) as f64,
             reason: Reason::TestOfChange {
@@ -350,40 +357,6 @@ fn tests_of(graph: &CallGraph, symbol: &SeedSymbol) -> (Vec<Candidate>, Option<C
         )
     });
     (found, gap)
-}
-
-/// Every symbol that reaches `target` through the edges of the graph, with
-/// a shortest path from it to `target`, the symbol first.
-///
-/// The graph answers *who* reaches a symbol; the path is what lets a reader
-/// check the claim, so it is kept while the dependents are walked, breadth
-/// first over the reverse edges (which the graph publishes in id order).
-fn reaching_paths(graph: &CallGraph, target: &SymbolId) -> Vec<(SymbolId, Vec<SymbolId>)> {
-    let mut next_hop: HashMap<SymbolId, SymbolId> = HashMap::new();
-    let mut order = Vec::new();
-    let mut queue = VecDeque::from([target.clone()]);
-    while let Some(current) = queue.pop_front() {
-        for dependent in graph.dependents(&current) {
-            if dependent == target || next_hop.contains_key(dependent) {
-                continue;
-            }
-            next_hop.insert(dependent.clone(), current.clone());
-            order.push(dependent.clone());
-            queue.push_back(dependent.clone());
-        }
-    }
-    order
-        .into_iter()
-        .map(|start| {
-            let mut path = vec![start.clone()];
-            let mut at = &start;
-            while let Some(next) = next_hop.get(at) {
-                path.push(next.clone());
-                at = next;
-            }
-            (start, path)
-        })
-        .collect()
 }
 
 /// The references the graph could not tie to a declaration that may name
