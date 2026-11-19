@@ -1362,13 +1362,12 @@ REGISTERED_TRAVERSALS: dict[str, str] = {
         "`require_git(false)`: the `.gitignore` of a project is honoured whether "
         "or not the project is a repository",
     "crates/cognicode-core/src/application/services/file_operations.rs":
-        "the content-search and directory-listing tools walk the path the caller "
-        "names with gitignore awareness and a depth bound; their output is a "
-        "published contract, not the project's file set. Measured in "
-        "`each_reader_of_the_tree_says_which_files_it_reads`: it lists non-source "
-        "files and `build/`, which the inventory prunes by design. The walk "
-        "repeats the law's `require_git(false)` in its own builder, because the "
-        "application cannot name the infrastructure module that owns it (CR-06)",
+        "directory listing walks the caller-selected path with gitignore awareness and a depth bound; "
+        "its published entries are not the graph inventory's source-file set",
+    "crates/cognicode-core/src/application/services/file_operations/search_content.rs":
+        "content search deliberately walks caller-selected paths for arbitrary file types, "
+        "using its own ignore/hidden policy to produce matches and a revision-bound cursor; "
+        "the graph inventory's source-name pruning is not the search result set",
     "crates/cognicode-core/src/assurance_export/workspace_extractor.rs":
         "the assurance export walks Rust files sorted by path with its own skip "
         "list; the export digest is computed over what it reads. Measured in "
