@@ -218,6 +218,7 @@ mod the_graph_does_not_depend_on_the_directory_order;
 mod the_graph_goals_publish_their_basis;
 mod the_graph_is_rebuilt_only_where_it_changed;
 mod the_graph_over_real_code_answers;
+mod the_graph_says_who_inherits_from_whom;
 mod the_hole_of_the_file_route_is_visible;
 mod the_identity_the_product_writes_is_the_one_it_reads;
 mod the_impact_names_the_tests_it_reaches;

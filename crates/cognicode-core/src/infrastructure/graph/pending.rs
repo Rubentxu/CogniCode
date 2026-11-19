@@ -48,7 +48,10 @@ pub struct PendingResolution {
 /// would name something the code does not name, and the hole it hides
 /// would be a real one.
 ///
-/// One kind of reference is not this module's rule: a call. The route that
+/// Two kinds of reference are not this module's rule. A parent is found by
+/// the project-wide rule —the one the per-file route uses— because the
+/// declaration that names a parent may live in another module of the
+/// project. And a call is not touched at all: the route that
 /// read the call already decided which scope applies to it —the
 /// project-wide one— and it already said why the call could not be tied
 /// to a declaration. This pass would either prove it against a declaration
@@ -74,28 +77,41 @@ pub fn resolve_pending_references(
         // language says whether the spelling folds.
         let folds_case = Language::folds_case_in(Some(origin));
         let mut resolution = None;
-        for reading in readings(&reference.target) {
-            // The declarations of the module that writes the reference are
-            // the only candidates: infrastructure code is scoped by
-            // directory, and a module does not see the declarations of
-            // another one —ni de sus hermanos ni de sus padres—. A
-            // declaration of a module that the writer cannot see does not
-            // satisfy the reference: it would be an edge that nothing
-            // proves, and it would hide the hole.
-            let in_module = index.candidates_in_module(&reading, module, folds_case);
-            if in_module.len() == 1 {
-                resolution = Some(TargetResolution::Resolved(in_module[0].clone()));
-                break;
+        if reference.kind == DependencyType::Inherits {
+            // A parent is not a reference. The declaration it names lives
+            // where the code that declares the parent lives, and the code
+            // that implements it may live in another module: the trait of a
+            // class is declared in the file that declares it, and the class
+            // that implements it in another one. The rule that finds a
+            // parent is therefore the project-wide one —the same rule the
+            // per-file route uses— and a parent resolved by the rule of
+            // the reference would be a parent of the module only: the two
+            // routes would answer differently about the same file.
+            resolution = Some(index.resolve(&reference.target, Some(origin)));
+        } else {
+            for reading in readings(&reference.target) {
+                // The declarations of the module that writes the reference are
+                // the only candidates: infrastructure code is scoped by
+                // directory, and a module does not see the declarations of
+                // another one —ni de sus hermanos ni de sus padres—. A
+                // declaration of a module that the writer cannot see does not
+                // satisfy the reference: it would be an edge that nothing
+                // proves, and it would hide the hole.
+                let in_module = index.candidates_in_module(&reading, module, folds_case);
+                if in_module.len() == 1 {
+                    resolution = Some(TargetResolution::Resolved(in_module[0].clone()));
+                    break;
+                }
+                if in_module.len() > 1 {
+                    resolution = Some(TargetResolution::Ambiguous {
+                        name: reading,
+                        candidates: in_module,
+                    });
+                    break;
+                }
+                // Nothing the writer's module declares carries that reading: a
+                // shorter one may still name a declaration.
             }
-            if in_module.len() > 1 {
-                resolution = Some(TargetResolution::Ambiguous {
-                    name: reading,
-                    candidates: in_module,
-                });
-                break;
-            }
-            // Nothing the writer's module declares carries that reading: a
-            // shorter one may still name a declaration.
         }
         match resolution {
             Some(TargetResolution::Resolved(target)) => {

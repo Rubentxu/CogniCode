@@ -40,6 +40,7 @@ use crate::infrastructure::graph::per_file_graph::content_hash_64;
 use crate::infrastructure::parser::Language;
 use crate::infrastructure::parser::TreeSitterParser;
 use crate::infrastructure::parser::language_config::LanguageConfig;
+use crate::infrastructure::parser::supertype::{SupertypeSource, declaration_named};
 
 /// What the domain reader makes of one file.
 ///
@@ -365,12 +366,70 @@ pub fn read_file_facts_with(
     }
     let symbols = parser.find_all_symbols_in_tree(&tree, source, file_path)?;
     let calls = parser.find_call_sites_in_tree(&tree, source, file_path)?;
+    // The parents the declarations of the file name. The walker of the
+    // language owns what a parent is; the relations are what the file
+    // states about its own declarations.
+    let (identified, pending) =
+        supertype_relations(config, &parser, &tree, source, file_path, &symbols);
     Ok(FileFacts {
         symbols,
-        identified: Vec::new(),
+        identified,
         calls,
-        pending: Vec::new(),
+        pending,
     })
+}
+
+/// The parents the declarations of a file name, as the relations they are.
+///
+/// A parent the file declares is a relation whose two ends are known; a
+/// parent the file does not declare is a reference the project may still
+/// be able to tie to a declaration in another file. A relation whose owner
+/// the file does not declare —Rust's `impl Trait for Type` when the type
+/// lives in another file— has no declaration to hang on, and it is not
+/// published: a relation with no declaration is not a relation.
+fn supertype_relations(
+    config: &LanguageConfig,
+    parser: &TreeSitterParser,
+    tree: &tree_sitter::Tree,
+    source: &str,
+    file_path: &str,
+    symbols: &[Symbol],
+) -> (Vec<FileRelation>, Vec<PendingReference>) {
+    let Some(walker) = config.type_ref_walker else {
+        return (Vec::new(), Vec::new());
+    };
+    let folds_case = config.language.folds_case();
+    let mut identified = Vec::new();
+    let mut pending = Vec::new();
+    for site in parser.find_supertype_sites_in_tree(tree, source, file_path, walker) {
+        // The declaration that owns the relation: the node the walker
+        // read, or the type it named — Rust's `impl Trait for Type`
+        // names the trait in a block that declares nothing, so the
+        // relation belongs to the type.
+        let source = match &site.source {
+            SupertypeSource::Declaration(id) => id.clone(),
+            SupertypeSource::Named(owner) => match declaration_named(symbols, owner, folds_case) {
+                Some(id) => id,
+                None => continue,
+            },
+        };
+        match declaration_named(symbols, &site.parent, folds_case) {
+            Some(parent) => identified.push(FileRelation {
+                caller: source,
+                callee: parent,
+                kind: DependencyType::Inherits,
+            }),
+            None => pending.push(PendingReference {
+                origin_file: file_path.to_string(),
+                origin_line: Some(site.line),
+                source,
+                target: site.parent,
+                kind: DependencyType::Inherits,
+                class: PendingClass::Unresolved,
+            }),
+        }
+    }
+    (identified, pending)
 }
 
 #[cfg(test)]

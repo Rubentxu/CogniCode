@@ -405,6 +405,19 @@ pub struct TypeRef {
     pub context: TypeRefContext,
     /// Source line number (1-indexed).
     pub line: u32,
+    /// The type the relation belongs to, when it is not the declaration
+    /// the reference was read from.
+    ///
+    /// Most of the time the relation hangs on the declaration the
+    /// reference was read from, and this stays `None`. Rust is the
+    /// exception: an `impl Trait for Type` names the trait in a block that
+    /// declares nothing, so the relation hangs on the type that implements
+    /// the trait — and the reader says which type that is by naming it.
+    ///
+    /// The name says which type implements the trait, and not the owner of
+    /// the impl: the owner of an impl is the trait, and the codebase says
+    /// so in another place.
+    pub implemented_type: Option<String>,
 }
 
 /// The syntactic context in which a type reference appears.

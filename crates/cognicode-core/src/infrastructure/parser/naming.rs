@@ -1247,6 +1247,39 @@ pub fn receiver_of(raw: &str) -> Option<&str> {
     Some(receiver)
 }
 
+/// The names the file binds to a type: the types it declares, and the names
+/// it imports.
+///
+/// A name the file binds is a name the file owns: a type it declares, or a
+/// name an import brings in. A name the file does not bind is a local, and a
+/// local is not a type.
+pub fn type_names_bound_to_types(
+    root: Node,
+    source: &[u8],
+    import_types: &[&str],
+) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        match node.kind() {
+            "struct_item" | "enum_item" | "trait_item" | "union_item" | "type_item" => {
+                if let Some(name) = node.child_by_field_name("name") {
+                    names.insert(node_text(&name, source));
+                }
+            }
+            kind if import_types.contains(&kind) => {
+                for (name, _origin) in import_bindings(&node, source) {
+                    names.insert(name);
+                }
+            }
+            _ => {}
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    names
+}
+
 /// What a file says about the receivers of its calls.
 ///
 /// A call written on a value names a method of the receiver's type, and the

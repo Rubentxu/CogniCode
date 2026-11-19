@@ -824,6 +824,19 @@ impl Language {
     pub const fn names_types_before_use(self) -> bool {
         matches!(self, Language::Rust)
     }
+
+    /// Whether a value of a type is written by naming the type.
+    ///
+    /// Rust writes the constructor of a type as the name of the type:
+    /// `let page = Html;` is the construction of an `Html`, and the reader
+    /// that reads only calls does not see it —a call expression is a name
+    /// with arguments, and this one has none.
+    ///
+    /// A language whose values are always written through a constructor
+    /// (`Html::new()`) needs no rule of its own: the call is the call.
+    pub const fn constructs_types_by_name(self) -> bool {
+        matches!(self, Language::Rust)
+    }
 }
 
 impl Language {
