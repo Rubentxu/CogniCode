@@ -19,7 +19,8 @@
 //! come out the same. This module is where the two are told apart: a
 //! derived answer carries an **identity** — a digest over what it says,
 //! with no line in it — and the places it names are **locations**, which
-//! are re-anchored to the new snapshot when the answer is reused.
+//! are re-anchored to the new snapshot when the answer is computed again
+//! and says the same thing.
 //!
 //! ## What the identity is made of
 //!
@@ -47,6 +48,12 @@
 //! a reuse: a scope that cannot prove what it read proves nothing, and an
 //! answer built on it is computed again.
 //!
+//! One thing the fact diff cannot see is checked here: the kind of a thing
+//! rides the provenance detail of its definition, and the diff compares the
+//! facts by what they assert. So a symbol that stops being a function and
+//! starts being a struct is invisible to it, and the new snapshot's view is
+//! the authority on what the thing is now.
+//!
 //! ## Nothing here is a runtime
 //!
 //! The module is pure: no I/O, no clock, no cache, no daemon. The patterns
@@ -65,7 +72,9 @@ use crate::domain::readset::{InMemoryReadSetRecorder, ReadSetConfig};
 use crate::domain::scm::PathKey;
 
 use super::planner::{WorkDisposition, WorkId};
-use super::read_scope::{ReadBreadth, ReadScope};
+use super::read_scope::{
+    ChangedFacts, ReadBreadth, ReadResolution, ReadScope, ReadVerdict, resolve_reads,
+};
 use super::scm_delta::RevisionFacts;
 
 /// The predicate whose fact names a symbol: `(symbol, defines, identity)`.
@@ -233,6 +242,19 @@ impl DerivedAnswer {
         }
     }
 
+    /// The things the answer says about, in canonical order and without
+    /// repetitions.
+    pub fn subjects(&self) -> Vec<DerivedSubject> {
+        let mut subjects: Vec<DerivedSubject> = self
+            .relations
+            .iter()
+            .map(|relation| relation.subject.clone())
+            .collect();
+        subjects.sort();
+        subjects.dedup();
+        subjects
+    }
+
     /// The names the answer mentions but does not define.
     ///
     /// The definition of a subject is not a mention: it is the subject
@@ -243,15 +265,6 @@ impl DerivedAnswer {
             .iter()
             .filter(|relation| relation.relation != DEFINES_PREDICATE)
             .map(|relation| relation.object.clone())
-            .collect()
-    }
-
-    /// The paths the answer read.
-    pub fn read_paths(&self) -> BTreeSet<PathKey> {
-        self.scope
-            .reads
-            .iter()
-            .filter_map(|read| PathKey::new(&read.path).ok())
             .collect()
     }
 
@@ -266,36 +279,18 @@ impl DerivedAnswer {
     }
 }
 
-/// What changed since the stored answer was produced.
-///
-/// The paths that changed and the paths that were added are two different
-/// things: a path that was added cannot be one the answer read, but a
-/// collection read can still see it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct DerivedChange {
-    /// The paths whose content changed.
-    pub changed: BTreeSet<PathKey>,
-    /// The paths that were added.
-    pub added: BTreeSet<PathKey>,
-}
-
-impl DerivedChange {
-    /// A change of the paths that changed, and of none that were added.
-    pub fn of(paths: &[PathKey]) -> Self {
-        Self {
-            changed: paths.iter().cloned().collect(),
-            added: BTreeSet::new(),
-        }
-    }
-}
-
 /// Why a derived answer was not reused.
+///
+/// The reasons the scope gives are the product's own
+/// ([`ReadReason`](super::read_scope::ReadReason)): this module does not
+/// invent a second answer to "did anything I read change".
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DerivedReuseReason {
-    /// A path the answer read changed.
-    ReadPathChanged {
-        /// The path.
-        path: PathKey,
+    /// The scope of the answer does not prove it still holds. The reasons
+    /// are the ones the scope resolution gives.
+    ScopeNotValid {
+        /// The verdict and its reasons.
+        resolution: Box<ReadResolution>,
     },
     /// A name the answer looked for and did not find is now there.
     AbsenceViolated {
@@ -310,6 +305,24 @@ pub enum DerivedReuseReason {
         /// The name.
         name: String,
     },
+    /// A thing the answer says about is not the same thing now: it changed
+    /// its kind, or it is not there any more.
+    ///
+    /// The fact delta cannot see this on its own: it compares the facts by
+    /// what they assert, and the kind of a thing rides the provenance
+    /// detail of its definition. The new snapshot's view is the authority
+    /// on what the thing is now.
+    SubjectChanged {
+        /// The file the thing lives in.
+        file: String,
+        /// The name of the thing.
+        name: String,
+        /// The kind the answer said.
+        before: String,
+        /// The kinds the new snapshot holds, sorted; empty when the thing
+        /// is not there any more.
+        after: Vec<String>,
+    },
     /// The producer that produced the facts the answer read changed.
     ProducerChanged {
         /// The producer of the stored answer.
@@ -320,15 +333,6 @@ pub enum DerivedReuseReason {
     /// The coverage of the run changed: the two answers do not cover the
     /// same ground, so they are not the same answer.
     CoverageChanged,
-    /// The scope of the answer does not name everything it read: it is a
-    /// lower bound, so nothing can be proven from it.
-    ScopeIncomplete,
-    /// A path was added and the answer read a whole collection: a new
-    /// fact anywhere could change what a collection says.
-    CollectionAddition {
-        /// The path that was added.
-        path: PathKey,
-    },
     /// Some facts the answer read name a subject the revision does not
     /// define: the answer cannot say what they are about.
     UnattributedReads {
@@ -546,20 +550,33 @@ impl<'a> DefinesIndex<'a> {
 
 /// Decides whether a stored derived answer can be reused on a new snapshot.
 ///
-/// `change` says what changed since the answer was produced; `head` is the
-/// entity view of the new snapshot, which says where the names the answer
-/// mentions are defined now. The answer is reusable only when nothing it
-/// depends on moved: a changed path it read, a name that appeared where it
-/// looked and found nothing, a dependency that moved, a new path a
-/// collection read can see, another producer or another coverage class.
+/// `changed` says what changed since the answer was produced; `head` is
+/// the entity view of the new snapshot, which says where the names the
+/// answer mentions are defined now. The answer is reusable only when
+/// nothing it depends on moved: the scope has to prove it still holds, a
+/// name that appeared where the answer looked and found nothing forbids
+/// the reuse, a dependency that moved forbids it, and so do another
+/// producer and another coverage class.
 pub fn reuse_decision(
     stored: &DerivedAnswer,
-    change: &DerivedChange,
+    changed: &ChangedFacts,
     head: &SnapshotEntityView,
     head_producer: &str,
     head_coverage_complete: bool,
 ) -> DerivedReuseDecision {
     let mut reasons: Vec<DerivedReuseReason> = Vec::new();
+
+    // The scope is the product's own authority on what changed: a changed
+    // read invalidates, and everything the scope cannot prove — a
+    // truncated scope, an unattributed change, an escalated path, missing
+    // facts, a new fact a collection read could have seen — forbids the
+    // reuse too.
+    let resolution = resolve_reads(Some(&stored.scope), changed);
+    if resolution.verdict != ReadVerdict::Valid {
+        reasons.push(DerivedReuseReason::ScopeNotValid {
+            resolution: Box::new(resolution),
+        });
+    }
 
     if stored.producer != head_producer {
         reasons.push(DerivedReuseReason::ProducerChanged {
@@ -570,41 +587,35 @@ pub fn reuse_decision(
     if stored.coverage_complete != head_coverage_complete {
         reasons.push(DerivedReuseReason::CoverageChanged);
     }
-    if !stored.scope.is_exact() {
-        reasons.push(DerivedReuseReason::ScopeIncomplete);
-    }
     if stored.unattributed > 0 {
         reasons.push(DerivedReuseReason::UnattributedReads {
             count: stored.unattributed,
         });
     }
 
-    let read_paths = stored.read_paths();
-    for path in &change.changed {
-        if read_paths.contains(path) {
-            reasons.push(DerivedReuseReason::ReadPathChanged { path: path.clone() });
-        }
-    }
-
-    // A path that was added cannot be one the answer read, but a
-    // collection read sees what appears anywhere.
-    if stored.scope.breadth == ReadBreadth::Aggregate {
-        for path in &change.added {
-            reasons.push(DerivedReuseReason::CollectionAddition { path: path.clone() });
-        }
-    }
-
     // The names the answer looked for and did not find: a name that is now
     // defined in the path where it was missing changes the answer.
     for absence in &stored.absences {
-        if change.changed.contains(&absence.path)
-            && head.entities.values().any(|entity| {
-                entity.name == absence.name && identity_file(&entity.fqn) == absence.path.as_str()
-            })
-        {
+        if changed.touches_symbol(absence.path.as_str(), &absence.name) {
             reasons.push(DerivedReuseReason::AbsenceViolated {
                 path: absence.path.clone(),
                 name: absence.name.clone(),
+            });
+        }
+    }
+
+    // The kind of a thing is part of what the answer says, and the fact
+    // delta cannot see it: it compares the facts by what they assert, and
+    // the kind rides the provenance detail of the definition. The new
+    // snapshot's view is the authority on what the thing is now.
+    for subject in stored.subjects() {
+        let now = head_kinds_of(head, &subject.file, &subject.name);
+        if now != BTreeSet::from([subject.kind.clone()]) {
+            reasons.push(DerivedReuseReason::SubjectChanged {
+                file: subject.file.clone(),
+                name: subject.name.clone(),
+                before: subject.kind.clone(),
+                after: now.into_iter().collect(),
             });
         }
     }
@@ -624,6 +635,19 @@ pub fn reuse_decision(
     } else {
         DerivedReuseDecision::Recompute { reasons }
     }
+}
+
+/// The kinds the head view holds for one name in one file.
+///
+/// More than one kind means the new snapshot holds more than one thing
+/// under that name: the answer cannot say which one it was talking about,
+/// and the comparison says so.
+fn head_kinds_of(head: &SnapshotEntityView, file: &str, name: &str) -> BTreeSet<String> {
+    head.entities
+        .values()
+        .filter(|entity| entity.name == name && identity_file(&entity.fqn) == file)
+        .map(|entity| entity.kind.clone())
+        .collect()
 }
 
 /// The places a name is defined, as the head view holds them.
@@ -656,6 +680,10 @@ pub struct DerivedReuseMeasurement {
     pub saved_units: u64,
     /// The reasons the answer was not reused.
     pub reasons: Vec<DerivedReuseReason>,
+    /// How many answers the store holds.
+    pub stored_entries: usize,
+    /// How many answers the bound made the store forget.
+    pub forgotten_entries: usize,
 }
 
 impl DerivedReuseMeasurement {
@@ -676,7 +704,23 @@ impl DerivedReuseMeasurement {
                 0
             },
             reasons: decision.reasons().to_vec(),
+            stored_entries: 0,
+            forgotten_entries: 0,
         }
+    }
+
+    /// Measures a decision against the cost of recomputing the answer, and
+    /// says what the store that holds the answers weighs.
+    pub fn of_store(
+        decision: &DerivedReuseDecision,
+        revalidation_units: u64,
+        recompute_units: u64,
+        store: &DerivedAnswerStore,
+    ) -> Self {
+        let mut measurement = Self::of(decision, revalidation_units, recompute_units);
+        measurement.stored_entries = store.len();
+        measurement.forgotten_entries = store.forgotten();
+        measurement
     }
 }
 
@@ -849,7 +893,7 @@ pub fn answer_on(
     query: &FactsQuery,
     base: SnapshotId,
     head: &RevisionFacts,
-    change: &DerivedChange,
+    changed: &ChangedFacts,
     producer: &str,
     coverage_complete: bool,
 ) -> DerivedOutcome {
@@ -857,7 +901,7 @@ pub fn answer_on(
     let stored = store.get(query, base).cloned();
 
     if let Some(stored) = stored {
-        let decision = reuse_decision(&stored, change, &head_view, producer, coverage_complete);
+        let decision = reuse_decision(&stored, changed, &head_view, producer, coverage_complete);
         if decision.is_reusable() {
             return DerivedOutcome::Reused { answer: stored };
         }
@@ -891,6 +935,7 @@ mod tests_support {
     use crate::domain::evidence_kernel::fact::{ProducerKind, ProvenanceRecord};
     use crate::domain::evidence_kernel::ids::{EntityId, FactId, SnapshotId};
     use crate::domain::evidence_kernel::relation::RelationKind;
+    use crate::domain::evidence_kernel::semantic_diff::compute_fact_delta;
     use crate::domain::value_objects::Provenance;
 
     /// The producer the facts of a revision carry.
@@ -978,8 +1023,39 @@ mod tests_support {
         SnapshotEntityView::from_facts(&revision.facts, revision.snapshot)
     }
 
-    pub fn change(paths: &[&str]) -> DerivedChange {
-        DerivedChange::of(&paths.iter().map(|text| path(text)).collect::<Vec<_>>())
+    /// The revision with one more file, `src/c.rs`, that defines `gamma`:
+    /// the file the answer does not depend on.
+    pub fn revision_with_gamma(snap: u64) -> RevisionFacts {
+        let mut revision = revision(snap, 1, "Function", "src/b.rs", 1);
+        revision.facts.push(fact(
+            4,
+            40,
+            "core:defines",
+            "src/c.rs:gamma:1",
+            Some("kind=Function"),
+            snap,
+        ));
+        revision
+            .path_facts
+            .insert(path("src/c.rs"), vec![FactId::new(4)]);
+        revision
+    }
+
+    /// What changed when nothing changed: the empty set of changes.
+    pub fn no_change() -> ChangedFacts {
+        ChangedFacts::default()
+    }
+
+    /// What changed between two revisions, in the terms the scope reads.
+    pub fn changed_between(base: &RevisionFacts, head: &RevisionFacts) -> ChangedFacts {
+        let delta = compute_fact_delta(
+            base.snapshot,
+            base.facts.clone(),
+            head.snapshot,
+            head.facts.clone(),
+        )
+        .expect("a delta");
+        ChangedFacts::from_delta(&delta, base, head)
     }
 }
 
@@ -1023,7 +1099,9 @@ mod tests {
     }
 
     /// Two worktrees of the same tree say the same thing: the identity
-    /// does not depend on the snapshot it was computed on.
+    /// does not depend on the snapshot it was computed on, and the paths
+    /// are repository-relative, so a worktree of the same tree is the
+    /// same answer.
     #[test]
     fn two_worktrees_of_the_same_tree_say_the_same_thing() {
         let one = revision(1, 1, "Function", "src/b.rs", 1);
@@ -1070,11 +1148,11 @@ mod tests {
     #[test]
     fn an_unrelated_change_leaves_the_answer_reusable() {
         let base = revision(1, 1, "Function", "src/b.rs", 1);
-        let head = revision(2, 1, "Function", "src/b.rs", 1);
+        let head = revision_with_gamma(2);
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&["src/c.rs"]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             true,
@@ -1091,21 +1169,23 @@ mod tests {
     #[test]
     fn a_change_in_the_path_the_answer_read_forbids_the_reuse() {
         let base = revision(1, 1, "Function", "src/b.rs", 1);
-        let head = revision(2, 1, "Function", "src/b.rs", 1);
+        let head = revision(2, 9, "Function", "src/b.rs", 1);
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             true,
         );
 
-        assert_eq!(
-            decision.reasons(),
-            &[DerivedReuseReason::ReadPathChanged {
-                path: path("src/a.rs")
-            }]
+        assert!(
+            matches!(
+                decision.reasons().first(),
+                Some(DerivedReuseReason::ScopeNotValid { .. })
+            ),
+            "the scope says the read changed: {:?}",
+            decision.reasons()
         );
     }
 
@@ -1138,7 +1218,7 @@ mod tests {
 
         let decision = reuse_decision(
             &stored,
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             true,
@@ -1156,6 +1236,36 @@ mod tests {
         );
     }
 
+    /// A kind that changed forbids the reuse, even when the fact delta
+    /// cannot see it: the delta compares the facts by what they assert,
+    /// and the kind rides the provenance detail of the definition.
+    #[test]
+    fn a_kind_that_changed_forbids_the_reuse() {
+        let base = revision(1, 1, "Function", "src/b.rs", 1);
+        let head = revision(2, 1, "Struct", "src/b.rs", 1);
+
+        let decision = reuse_decision(
+            &answer(&base),
+            &changed_between(&base, &head),
+            &head_view(&head),
+            PRODUCER,
+            true,
+        );
+
+        assert!(
+            decision
+                .reasons()
+                .contains(&DerivedReuseReason::SubjectChanged {
+                    file: "src/a.rs".to_string(),
+                    name: "alpha".to_string(),
+                    before: "Function".to_string(),
+                    after: vec!["Struct".to_string()],
+                }),
+            "the thing the answer says about is another thing now: {:?}",
+            decision.reasons()
+        );
+    }
+
     /// A definition that moved forbids the reuse: the answer depends on
     /// where the name it mentions resolves.
     #[test]
@@ -1165,7 +1275,7 @@ mod tests {
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&["src/c.rs"]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             true,
@@ -1191,7 +1301,7 @@ mod tests {
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&[]),
+            &changed_between(&base, &head),
             &head_view(&head),
             "cognicode.revision-facts/v5",
             true,
@@ -1215,7 +1325,7 @@ mod tests {
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&[]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             false,
@@ -1240,9 +1350,22 @@ mod tests {
             breadth: ReadBreadth::Pointwise,
         };
 
-        let decision = reuse_decision(&stored, &change(&[]), &head_view(&head), PRODUCER, true);
+        let decision = reuse_decision(
+            &stored,
+            &changed_between(&base, &head),
+            &head_view(&head),
+            PRODUCER,
+            true,
+        );
 
-        assert_eq!(decision.reasons(), &[DerivedReuseReason::ScopeIncomplete]);
+        assert!(
+            matches!(
+                decision.reasons().first(),
+                Some(DerivedReuseReason::ScopeNotValid { .. })
+            ),
+            "a truncated scope proves nothing: {:?}",
+            decision.reasons()
+        );
     }
 
     /// The measurement says what the revalidation bought, and an
@@ -1256,7 +1379,7 @@ mod tests {
         let reusable = DerivedReuseMeasurement::of(
             &reuse_decision(
                 &stored,
-                &change(&["src/c.rs"]),
+                &changed_between(&base, &head),
                 &head_view(&head),
                 PRODUCER,
                 true,
@@ -1267,11 +1390,15 @@ mod tests {
         assert!(reusable.reused);
         assert_eq!(reusable.saved_units, 90);
 
+        // The adversarial transition: everything the answer depends on
+        // moves. The revalidation was spent and the answer had to be
+        // computed again.
+        let adversarial_head = revision(2, 9, "Function", "src/b.rs", 1);
         let adversarial = DerivedReuseMeasurement::of(
             &reuse_decision(
                 &stored,
-                &change(&["src/a.rs"]),
-                &head_view(&head),
+                &changed_between(&base, &adversarial_head),
+                &head_view(&adversarial_head),
                 PRODUCER,
                 true,
             ),
@@ -1286,41 +1413,48 @@ mod tests {
         assert_eq!(adversarial.reasons.len(), 1);
     }
 
-    /// A collection read sees what appears anywhere: a path that was
-    /// added forbids the reuse.
+    /// A collection read sees what appears anywhere: a fact that appeared
+    /// somewhere else forbids the reuse.
     #[test]
-    fn a_new_path_forbids_the_reuse_of_a_collection_read() {
+    fn a_new_fact_forbids_the_reuse_of_a_collection_read() {
         let base = revision(1, 1, "Function", "src/b.rs", 1);
-        let head = revision(2, 1, "Function", "src/b.rs", 1);
+        let head = revision_with_gamma(2);
         let mut stored = answer(&base);
         stored.scope.breadth = ReadBreadth::Aggregate;
 
-        let change = DerivedChange {
-            changed: BTreeSet::new(),
-            added: BTreeSet::from([path("src/c.rs")]),
-        };
-        let decision = reuse_decision(&stored, &change, &head_view(&head), PRODUCER, true);
+        let decision = reuse_decision(
+            &stored,
+            &changed_between(&base, &head),
+            &head_view(&head),
+            PRODUCER,
+            true,
+        );
 
-        assert_eq!(
-            decision.reasons(),
-            &[DerivedReuseReason::CollectionAddition {
-                path: path("src/c.rs")
-            }]
+        assert!(
+            matches!(
+                decision.reasons().first(),
+                Some(DerivedReuseReason::ScopeNotValid { .. })
+            ),
+            "a collection read cannot prove it still holds: {:?}",
+            decision.reasons()
         );
     }
 
     /// A read that named exactly the facts it read does not see what
-    /// appears elsewhere: a path that was added leaves it reusable.
+    /// appears elsewhere: a fact that appeared elsewhere leaves it
+    /// reusable.
     #[test]
-    fn a_new_path_does_not_forbid_the_reuse_of_a_pointwise_read() {
+    fn a_new_fact_does_not_forbid_the_reuse_of_a_pointwise_read() {
         let base = revision(1, 1, "Function", "src/b.rs", 1);
-        let head = revision(2, 1, "Function", "src/b.rs", 1);
+        let head = revision_with_gamma(2);
 
-        let change = DerivedChange {
-            changed: BTreeSet::new(),
-            added: BTreeSet::from([path("src/c.rs")]),
-        };
-        let decision = reuse_decision(&answer(&base), &change, &head_view(&head), PRODUCER, true);
+        let decision = reuse_decision(
+            &answer(&base),
+            &changed_between(&base, &head),
+            &head_view(&head),
+            PRODUCER,
+            true,
+        );
 
         assert!(decision.is_reusable(), "{:?}", decision.reasons());
     }
@@ -1348,6 +1482,36 @@ mod tests {
         assert_ne!(answer(&base).identity, answer(&head).identity);
     }
 
+    /// A symbol that is not there any more forbids the reuse: the answer
+    /// says about a thing that does not exist.
+    #[test]
+    fn a_deleted_symbol_forbids_the_reuse() {
+        let base = revision(1, 1, "Function", "src/b.rs", 1);
+        let mut head = revision(2, 1, "Function", "src/b.rs", 1);
+        head.facts.retain(|fact| fact.id != FactId::new(1));
+
+        let decision = reuse_decision(
+            &answer(&base),
+            &changed_between(&base, &head),
+            &head_view(&head),
+            PRODUCER,
+            true,
+        );
+
+        assert!(
+            decision
+                .reasons()
+                .contains(&DerivedReuseReason::SubjectChanged {
+                    file: "src/a.rs".to_string(),
+                    name: "alpha".to_string(),
+                    before: "Function".to_string(),
+                    after: Vec::new(),
+                }),
+            "the thing the answer says about is not there any more: {:?}",
+            decision.reasons()
+        );
+    }
+
     /// A rename elsewhere forbids the reuse: the answer names a symbol
     /// that is no longer there, and the definition it depended on moved.
     #[test]
@@ -1370,7 +1534,7 @@ mod tests {
 
         let decision = reuse_decision(
             &answer(&base),
-            &change(&["src/b.rs"]),
+            &changed_between(&base, &head),
             &head_view(&head),
             PRODUCER,
             true,
@@ -1409,7 +1573,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1420,7 +1584,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/c.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1447,7 +1611,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1461,7 +1625,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1494,7 +1658,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1503,7 +1667,7 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1520,6 +1684,7 @@ mod store_tests {
     #[test]
     fn the_store_forgets_the_oldest_base_and_stays_correct() {
         let base = revision(1, 1, "Function", "src/b.rs", 1);
+        let other = revision(2, 1, "Function", "src/b.rs", 1);
         let mut store = DerivedAnswerStore::new(1);
         let query = query();
 
@@ -1528,19 +1693,18 @@ mod store_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &no_change(),
             PRODUCER,
             true,
         );
         assert_eq!(store.len(), 1);
 
-        let other = revision(2, 1, "Function", "src/b.rs", 1);
         let _ = answer_on(
             &mut store,
             &query,
-            SnapshotId::new(1),
+            SnapshotId::new(2),
             &other,
-            &change(&["src/a.rs"]),
+            &no_change(),
             PRODUCER,
             true,
         );
@@ -1580,7 +1744,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1589,7 +1753,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/c.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1613,7 +1777,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1622,7 +1786,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1645,7 +1809,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &base,
-            &change(&[]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );
@@ -1654,7 +1818,7 @@ mod work_tests {
             &query,
             SnapshotId::new(1),
             &head,
-            &change(&["src/a.rs"]),
+            &changed_between(&base, &head),
             PRODUCER,
             true,
         );

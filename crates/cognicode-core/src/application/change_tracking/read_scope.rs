@@ -358,6 +358,16 @@ impl ChangedFacts {
             && !self.incomplete
     }
 
+    /// Whether something changed about the symbol `symbol` in `path`.
+    ///
+    /// A change is attributed to the symbol it is about, so this answers
+    /// whether a name that was missing can now be found there.
+    pub fn touches_symbol(&self, path: &str, symbol: &str) -> bool {
+        self.by_path
+            .get(path)
+            .is_some_and(|symbols| symbols.iter().any(|name| name.as_deref() == Some(symbol)))
+    }
+
     fn touches(&self, read: &ScopedRead) -> bool {
         self.by_path.get(&read.path).is_some_and(|symbols| {
             symbols

@@ -10,17 +10,23 @@
 use std::collections::BTreeMap;
 
 use cognicode_core::application::change_tracking::derived_reuse::{
-    DerivedAnswerStore, DerivedChange, DerivedOutcome, FactsQuery, answer_of, answer_on,
-    plan_derived_work,
+    DerivedAnswerStore, DerivedOutcome, FactsQuery, answer_of, answer_on, plan_derived_work,
 };
 use cognicode_core::application::change_tracking::planner::{WorkDisposition, WorkId};
-use cognicode_core::application::change_tracking::read_scope::ReadBreadth;
+use cognicode_core::application::change_tracking::read_scope::{ChangedFacts, ReadBreadth};
+use cognicode_core::application::change_tracking::scheduling::{
+    CheckOutput, Computed, ConsumerClass, Coordinator, CostEstimator, DaemonProbe, QueuePolicy,
+    RevisionTag, RunStatus, ScheduleRequest, WorkKey,
+};
 use cognicode_core::application::change_tracking::scm_delta::RevisionFacts;
+use cognicode_core::domain::budgets::BudgetDeclaration;
 use cognicode_core::domain::evidence_kernel::fact::{
     Fact, FactValue, ProducerKind, ProvenanceRecord,
 };
 use cognicode_core::domain::evidence_kernel::ids::{EntityId, FactId, SnapshotId};
 use cognicode_core::domain::evidence_kernel::relation::RelationKind;
+use cognicode_core::domain::evidence_kernel::semantic_diff::compute_fact_delta;
+use cognicode_core::domain::findings::detector_ir::AnalysisCapability;
 use cognicode_core::domain::naming::NamespacedName;
 use cognicode_core::domain::scm::PathKey;
 use cognicode_core::domain::value_objects::Provenance;
@@ -88,6 +94,36 @@ fn revision(snapshot: u64, alpha_line: u32, alpha_kind: &str) -> RevisionFacts {
     }
 }
 
+/// The same tree with one more file, `src/c.rs`, that the answer does not
+/// depend on.
+fn revision_with_gamma(snapshot: u64) -> RevisionFacts {
+    let mut revision = revision(snapshot, 1, "Function");
+    revision.facts.push(fact(
+        4,
+        40,
+        "core:defines",
+        "src/c.rs:gamma:1",
+        Some("kind=Function"),
+        snapshot,
+    ));
+    revision
+        .path_facts
+        .insert(path("src/c.rs"), vec![FactId::new(4)]);
+    revision
+}
+
+/// What changed between two revisions, in the terms the scope reads.
+fn changed_between(base: &RevisionFacts, head: &RevisionFacts) -> ChangedFacts {
+    let delta = compute_fact_delta(
+        base.snapshot,
+        base.facts.clone(),
+        head.snapshot,
+        head.facts.clone(),
+    )
+    .expect("a delta");
+    ChangedFacts::from_delta(&delta, base, head)
+}
+
 fn query() -> FactsQuery {
     FactsQuery {
         path: path("src/a.rs"),
@@ -96,12 +132,31 @@ fn query() -> FactsQuery {
     }
 }
 
-fn changed(paths: &[&str]) -> DerivedChange {
-    DerivedChange::of(&paths.iter().map(|text| path(text)).collect::<Vec<_>>())
-}
-
 fn work() -> WorkId {
     WorkId::new(NamespacedName::new("tests.pack").expect("a namespaced name"))
+}
+
+/// The coordinator the work would be scheduled in.
+fn coordinator() -> Coordinator {
+    Coordinator::new(
+        QueuePolicy {
+            capacity: 4,
+            ci_reserved: 1,
+        },
+        BudgetDeclaration::none(),
+        std::sync::Arc::new(CostEstimator::new()),
+    )
+}
+
+/// The request the work would be scheduled with.
+fn request() -> ScheduleRequest {
+    ScheduleRequest {
+        consumer: ConsumerClass::Ci,
+        key: WorkKey::new(work(), SnapshotId::new(1), [AnalysisCapability::AstPattern]),
+        revision: RevisionTag::new("rev-1"),
+        required: true,
+        direct_units: 10,
+    }
 }
 
 /// The answer of the query on the base revision is stored, and an
@@ -109,15 +164,16 @@ fn work() -> WorkId {
 #[test]
 fn an_unrelated_change_reuses_the_stored_answer() {
     let base = revision(1, 1, "Function");
-    let head = revision(2, 1, "Function");
+    let head = revision_with_gamma(2);
     let mut store = DerivedAnswerStore::new(4);
+    let query = query();
 
     let first = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &base,
-        &changed(&[]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -125,10 +181,10 @@ fn an_unrelated_change_reuses_the_stored_answer() {
 
     let second = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &head,
-        &changed(&["src/c.rs"]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -146,13 +202,14 @@ fn the_code_above_a_symbol_moving_keeps_the_identity_the_work_holds() {
     let base = revision(1, 1, "Function");
     let head = revision(2, 9, "Function");
     let mut store = DerivedAnswerStore::new(4);
+    let query = query();
 
     let first = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &base,
-        &changed(&[]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -163,10 +220,10 @@ fn the_code_above_a_symbol_moving_keeps_the_identity_the_work_holds() {
 
     let second = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &head,
-        &changed(&["src/a.rs"]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -206,22 +263,23 @@ fn what_the_answer_says_changing_leaves_the_work_affected() {
     let base = revision(1, 1, "Function");
     let head = revision(2, 1, "Struct");
     let mut store = DerivedAnswerStore::new(4);
+    let query = query();
 
     let _ = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &base,
-        &changed(&[]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
     let second = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &head,
-        &changed(&["src/a.rs"]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -237,22 +295,23 @@ fn the_incremental_path_and_the_full_path_agree() {
     let base = revision(1, 1, "Function");
     let head = revision(2, 9, "Function");
     let mut store = DerivedAnswerStore::new(4);
+    let query = query();
 
     let _ = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &base,
-        &changed(&[]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
     let incremental = answer_on(
         &mut store,
-        &query(),
+        &query,
         SnapshotId::new(1),
         &head,
-        &changed(&["src/a.rs"]),
+        &changed_between(&base, &head),
         PRODUCER,
         true,
     );
@@ -261,10 +320,62 @@ fn the_incremental_path_and_the_full_path_agree() {
         other => panic!("the change forces the query to run again: {other:?}"),
     };
 
-    let full = answer_of(&head, &query(), PRODUCER, true);
+    let full = answer_of(&head, &query, PRODUCER, true);
     assert_eq!(
         incremental.identity, full.identity,
         "the answer the store keeps says what a full recomputation says"
     );
     assert_eq!(incremental.relations, full.relations);
+}
+
+/// The reuse is decided before the work is scheduled: an answer that
+/// still holds is not a scheduled work at all, and the work that has to
+/// be computed goes through the coordinator as usual, with its
+/// single-flight untouched.
+#[test]
+fn a_reusable_answer_is_not_a_scheduled_work() {
+    let base = revision(1, 1, "Function");
+    let head = revision_with_gamma(2);
+    let mut store = DerivedAnswerStore::new(4);
+    let query = query();
+    let coordinator = coordinator();
+
+    // The first run: nothing is stored yet, so the query is computed —
+    // and the work that computes it goes through the coordinator.
+    let first = answer_on(
+        &mut store,
+        &query,
+        SnapshotId::new(1),
+        &base,
+        &changed_between(&base, &head),
+        PRODUCER,
+        true,
+    );
+    assert!(matches!(first, DerivedOutcome::Recomputed { .. }));
+    let outcome = coordinator.run(&request(), DaemonProbe::ABSENT, |_flag| {
+        Ok(Computed {
+            output: CheckOutput::Pass(()),
+            measured_units: 10,
+        })
+    });
+    assert!(matches!(outcome.status, RunStatus::Pass(())));
+    assert_eq!(coordinator.metrics().physical_computations, 1);
+
+    // The second run: the answer still holds, so no work is scheduled
+    // and the physical computation does not move.
+    let second = answer_on(
+        &mut store,
+        &query,
+        SnapshotId::new(1),
+        &head,
+        &changed_between(&base, &head),
+        PRODUCER,
+        true,
+    );
+    assert!(matches!(second, DerivedOutcome::Reused { .. }));
+    assert_eq!(
+        coordinator.metrics().physical_computations,
+        1,
+        "the answer that still holds is not a scheduled work"
+    );
 }
