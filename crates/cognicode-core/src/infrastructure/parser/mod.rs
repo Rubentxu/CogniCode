@@ -2,6 +2,7 @@
 
 mod ast_scanner;
 pub mod language_config;
+pub mod macro_calls;
 pub mod naming;
 pub mod syntax_analysis;
 pub mod test_markers;

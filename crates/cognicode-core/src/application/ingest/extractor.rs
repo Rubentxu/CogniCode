@@ -13,8 +13,11 @@ use crate::application::ingest::types::{
 // path (E38.1 CP-1), so `SymbolFqn` compiles unconditionally.
 use crate::domain::aggregates::{GraphNode, NodeId};
 use crate::domain::evidence_kernel::SymbolFqn;
-use crate::domain::value_objects::{DependencyType, NodeKind, Provenance, SymbolKind};
+use crate::domain::value_objects::{
+    DependencyType, MacroCallShape, NodeKind, Provenance, SymbolKind,
+};
 use crate::infrastructure::parser::LanguageConfig;
+use crate::infrastructure::parser::macro_calls;
 use crate::infrastructure::parser::naming;
 use cognicode_graph_algos::algorithms::Statement;
 
@@ -282,6 +285,7 @@ pub fn extract_file_checked(
                 source_bytes,
                 &symbol_id,
                 &symbols,
+                config.language.macro_call_shape(),
                 &source_path_str,
                 &mut edges,
             );
@@ -581,6 +585,7 @@ fn extract_calls_from_node(
     source: &[u8],
     caller_id: &str,
     symbols: &crate::domain::value_objects::language::LanguageSymbols,
+    shape: Option<MacroCallShape>,
     _source_path: &str,
     edges: &mut Vec<ExtractionEdge>,
 ) {
@@ -610,6 +615,36 @@ fn extract_calls_from_node(
             }
         }
 
+        // The calls a macro body writes. A grammar does not parse the body
+        // of a macro as expressions, so the reader recognises the call
+        // instead of reading it: the name of the callee and the list of
+        // arguments right after it.
+        if let Some(shape) = shape {
+            if shape.macro_types.contains(&nt) {
+                for call in macro_calls::calls_in_body(&node, source, &shape) {
+                    let callee = naming::clean_callee_name(&call.text);
+                    if callee.is_empty() {
+                        continue;
+                    }
+                    edges.push(ExtractionEdge {
+                        source: caller_id.to_string(),
+                        target_ref: TargetRef::Unresolved(callee),
+                        kind: format!("dependency.{}", DependencyType::Calls),
+                        provenance: Provenance::Inferred,
+                        confidence: MACRO_CALL_CONFIDENCE,
+                        line: Some(call.line),
+                    });
+                }
+            }
+
+            // The body of a macro definition is expanded wherever the macro
+            // is used: a call written in it is not a call of the function
+            // that holds the definition.
+            if shape.definition_types.contains(&nt) {
+                continue;
+            }
+        }
+
         // Only descend into children that are within the function body
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -619,6 +654,18 @@ fn extract_calls_from_node(
         }
     }
 }
+
+/// The confidence a call written inside a macro body is published with.
+///
+/// The reader recognises the call inside the body of a macro; it does not
+/// read it. `Provenance::Inferred` is the class that says so, and it admits
+/// a score in `[0.5, 0.9]`.
+///
+/// The fact bridge does not carry the class into the fact store yet, so
+/// the fact of a call written in a macro is published as an extracted one.
+/// The class says here how the edge was obtained, not what the fact store
+/// believes about it.
+const MACRO_CALL_CONFIDENCE: f64 = 0.6;
 
 /// Map a tree-sitter class-like node to a `SymbolKind`.
 ///
@@ -1109,6 +1156,126 @@ mod tests {
             .collect();
         kinds.sort_by_key(|kind| format!("{kind:?}"));
         kinds
+    }
+
+    /// The names the calls of a file point at, with the provenance and the
+    /// confidence they carry.
+    fn calls(
+        cfg: &crate::infrastructure::parser::language_config::LanguageConfig,
+        path: &str,
+        source: &str,
+    ) -> Vec<(String, Provenance, f64)> {
+        let result = extract_file(cfg, std::path::Path::new(path), source, "hash");
+        assert!(result.is_ok(), "extract_file failed: {:?}", result.error);
+        let kind = format!("dependency.{}", DependencyType::Calls);
+        let mut found: Vec<(String, Provenance, f64)> = result
+            .edges
+            .iter()
+            .filter(|e| e.kind == kind)
+            .filter_map(|e| match &e.target_ref {
+                TargetRef::Unresolved(n) => Some((n.clone(), e.provenance, e.confidence)),
+                TargetRef::Resolved(_) => None,
+            })
+            .collect();
+        found.sort_by(|a, b| a.0.cmp(&b.0));
+        found
+    }
+
+    /// The calls a Rust file publishes, by name.
+    fn rust_calls(source: &str) -> Vec<String> {
+        calls(
+            &crate::infrastructure::parser::language_config::RUST_CONFIG,
+            "/tmp/check.rs",
+            source,
+        )
+        .into_iter()
+        .map(|(name, _, _)| name)
+        .collect()
+    }
+
+    #[test]
+    fn a_call_written_inside_a_macro_is_a_call() {
+        let found = calls(
+            &crate::infrastructure::parser::language_config::RUST_CONFIG,
+            "/tmp/check.rs",
+            "fn check() {\n    assert_eq!(reload(\"a=1\").entries.len(), 1);\n}\n",
+        );
+        let (_, provenance, confidence) = found
+            .iter()
+            .find(|(name, _, _)| name == "reload")
+            .unwrap_or_else(|| panic!("the call inside the macro is not published: {found:?}"));
+        assert_eq!(*provenance, Provenance::Inferred);
+        assert!(
+            *confidence < 1.0,
+            "a call read out of a macro is weaker than a call read out of code: {confidence}"
+        );
+    }
+
+    #[test]
+    fn a_macro_invoked_inside_a_macro_is_not_a_call() {
+        let found = rust_calls("fn check() {\n    assert!(matches!(x, Foo::Bar));\n}\n");
+        assert!(
+            !found.iter().any(|name| name == "matches"),
+            "a macro is not a call: {found:?}"
+        );
+    }
+
+    #[test]
+    fn two_names_in_a_macro_are_not_calls() {
+        let found = rust_calls("fn check() {\n    assert_eq!(left, right);\n}\n");
+        assert!(
+            !found.iter().any(|name| name == "left" || name == "right"),
+            "a name without an argument list is not a call: {found:?}"
+        );
+    }
+
+    #[test]
+    fn the_body_of_a_macro_definition_is_not_a_call_site() {
+        let found = rust_calls(
+            "fn check() {\n    macro_rules! helper {\n        ($e:expr) => { assert_eq!(inner($e), 1) };\n    }\n    helper!(reload(\"a=1\"));\n}\n",
+        );
+        assert!(
+            !found.iter().any(|name| name == "inner"),
+            "a definition is expanded wherever the macro is used: {found:?}"
+        );
+        assert!(
+            found.iter().any(|name| name == "reload"),
+            "the call at the invocation site is a call: {found:?}"
+        );
+    }
+
+    /// The same text, read in code and read in the body of a macro, is
+    /// read the same way.
+    ///
+    /// The body of a macro is not parsed as expressions, so the reader
+    /// reads it as a token tree. A reader that named more calls in the
+    /// body than in the code would publish two different graphs for the
+    /// same project, and the drift would only be visible in the answers.
+    #[test]
+    fn the_calls_of_a_macro_body_are_the_calls_the_same_text_publishes_in_code() {
+        for (code, macro_body) in [
+            ("let _ = Some(f());", "assert_eq!(Some(f()), 1);"),
+            ("let _ = foo::bar();", "assert_eq!(foo::bar(), 1);"),
+            ("let _ = self.helper();", "assert_eq!(self.helper(), 1);"),
+            ("let _ = x.len();", "assert_eq!(x.len(), 1);"),
+        ] {
+            let in_code = rust_calls(&format!("fn check() {{\n    {code}\n}}\n"));
+            let in_macro = rust_calls(&format!("fn check() {{\n    {macro_body}\n}}\n"));
+
+            // The macro itself is an edge this extractor published before
+            // the body was read: what the body adds is the calls it writes.
+            let mut only_in_the_macro = in_macro.clone();
+            only_in_the_macro.retain(|name| !in_code.contains(name));
+            assert_eq!(
+                only_in_the_macro,
+                vec!["assert_eq".to_string()],
+                "the body of a macro is read differently than the code it spells: {macro_body}"
+            );
+            assert!(
+                in_code.iter().all(|name| in_macro.contains(name)),
+                "a call of the code is missing from the macro body: {in_code:?} vs {in_macro:?}"
+            );
+        }
     }
 
     #[test]
