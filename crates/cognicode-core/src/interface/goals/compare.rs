@@ -913,6 +913,7 @@ mod tests {
     const FUNCTION_DETECTOR: &str = "structure.function_definition";
     const TYPE_DETECTOR: &str = "structure.type_definition";
     const BUCKET_DETECTOR: &str = "infrastructure.unprotected_s3_bucket";
+    const HELM_DETECTOR: &str = "configuration.unused_helm_value";
 
     fn head_of(answer: &GoalCompare, detector: &str) -> CompareHeadFindings {
         answer
@@ -941,7 +942,9 @@ mod tests {
             answer.work_reuse_reason
         );
         let reuse = answer.work_reuse.expect("a verdict per detector");
-        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 3, 0));
+        // Four detectors write a read-set since the Helm production detector
+        // (CGH-082) joined the three originals.
+        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 4, 0));
         assert!(
             reuse
                 .works
@@ -987,9 +990,12 @@ mod tests {
         assert_eq!(disposition(FUNCTION_DETECTOR), "unknown");
         assert_eq!(disposition(TYPE_DETECTOR), "unaffected");
         assert_eq!(disposition(BUCKET_DETECTOR), "unknown");
+        // The Helm detector records no read boundary either, so like the
+        // bucket detector it cannot be proven unread.
+        assert_eq!(disposition(HELM_DETECTOR), "unknown");
         assert_eq!(
             (reuse.unaffected, reuse.unknown),
-            (1, 2),
+            (1, 3),
             "the addition is proven outside only the type detector's boundary"
         );
     }
@@ -1122,7 +1128,12 @@ mod tests {
             .collect();
         assert_eq!(
             detectors,
-            [FUNCTION_DETECTOR, TYPE_DETECTOR, BUCKET_DETECTOR]
+            [
+                FUNCTION_DETECTOR,
+                TYPE_DETECTOR,
+                BUCKET_DETECTOR,
+                HELM_DETECTOR
+            ]
         );
         let types = head_of(&answer, TYPE_DETECTOR);
         assert_eq!(types.reuse, "reused", "{}", types.reason);
