@@ -109,6 +109,7 @@ fn a_scope_never_says_valid_where_the_planner_proves_the_read_stale() {
                 execution: ExecutionId(0),
                 read_set: [fact].into_iter().collect::<ReadSet>(),
                 read_scope: None,
+                read_boundary: None,
             };
             let planned = plan_affected_work(&delta, &[dependency]).decisions[0].disposition;
             let scope = ReadScope::from_reads([fact], false, &base, ReadBreadth::Pointwise);
@@ -170,6 +171,7 @@ fn pointwise_scope_proves_exclusion_but_unscoped_planner_remains_unknown() {
         execution: ExecutionId(0),
         read_set: [read].into_iter().collect(),
         read_scope: None,
+        read_boundary: None,
     };
     assert_eq!(
         plan_affected_work(&delta, &[dependency]).decisions[0].disposition,

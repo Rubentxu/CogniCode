@@ -894,6 +894,11 @@ pub fn dependencies_on(index: &DetectorReuseIndex, base: SnapshotId) -> Vec<Exec
                 execution: ExecutionId(0),
                 read_set,
                 read_scope: None,
+                read_boundary: record
+                    .read_boundary
+                    .as_ref()
+                    .filter(|boundary| boundary.is_supported_for(record))
+                    .cloned(),
             })
         })
         .collect()
@@ -991,7 +996,9 @@ pub fn assess_reuse(
 mod tests {
     use super::*;
     use crate::application::revision_snapshots::RevisionSnapshotStore;
-    use crate::domain::findings::detector_reuse::{DetectorRunIdentity, DetectorRunRecord};
+    use crate::domain::findings::detector_reuse::{
+        DETECTOR_READ_BOUNDARY_SCHEMA, DetectorReadBoundary, DetectorRunIdentity, DetectorRunRecord,
+    };
     use crate::domain::findings::digest::DetectorDigest;
     use crate::domain::findings::{
         AnalysisCapability, DetectorAuthority, DetectorDigests, DetectorId,
@@ -1095,6 +1102,21 @@ mod tests {
                 findings: Vec::new(),
             });
         }
+        index
+    }
+
+    fn index_with_function_boundary(base: &ProducedRevision) -> DetectorReuseIndex {
+        let mut index = index_reading(base, &[("detector.functions", "src/a.rs")], false);
+        let record = index.records.first_mut().expect("record");
+        record.read_boundary = Some(DetectorReadBoundary {
+            schema: DETECTOR_READ_BOUNDARY_SCHEMA.to_string(),
+            identity: record.identity.clone(),
+            detector_id: record.identity.detector_id.clone(),
+            snapshot: base.facts.snapshot,
+            predicates: ["core:defines".to_string()].into_iter().collect(),
+            details: ["kind=Function".to_string()].into_iter().collect(),
+            complete: true,
+        });
         index
     }
 
@@ -1839,6 +1861,251 @@ unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
         assert_eq!(verdict("detector.reads_a"), WorkDisposition::Affected);
         assert_eq!(verdict("detector.reads_b"), WorkDisposition::Unaffected);
         assert_eq!(answer.status, ReuseStatus::Evaluated);
+    }
+
+    #[test]
+    fn supported_detector_boundary_is_carried_into_reuse_dependency() {
+        let fake = two_branches();
+        let base = produce(&fake, "main", None);
+        let mut index = index_reading(&base, &[("detector.reads_b", "src/b.rs")], false);
+        let record = index.records.first_mut().expect("record");
+        record.read_boundary = Some(DetectorReadBoundary {
+            schema: DETECTOR_READ_BOUNDARY_SCHEMA.to_string(),
+            identity: record.identity.clone(),
+            detector_id: record.identity.detector_id.clone(),
+            snapshot: base.facts.snapshot,
+            predicates: ["core:defines".to_string()].into_iter().collect(),
+            details: ["kind=Struct".to_string()].into_iter().collect(),
+            complete: true,
+        });
+
+        let dependencies = dependencies_on(&index, base.facts.snapshot);
+
+        assert_eq!(
+            dependencies[0].read_boundary,
+            index.records[0].read_boundary
+        );
+    }
+
+    #[test]
+    fn a_complete_boundary_proves_an_out_of_kind_addition_unaffected_with_reason() {
+        let fake = provider(&[
+            ("main", &[], &[("src/a.rs", ALPHA_V1), ("src/b.rs", BETA)]),
+            (
+                "feature",
+                &["main"],
+                &[
+                    ("src/a.rs", ALPHA_V1),
+                    ("src/b.rs", BETA),
+                    ("src/new.rs", b"struct Delta {}\n"),
+                ],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_with_function_boundary(&base);
+
+        let dependencies = dependencies_on(&index, base.facts.snapshot);
+        let plan = plan_between(
+            &base.facts,
+            &head.facts,
+            &changes,
+            &BTreeSet::new(),
+            &dependencies,
+        )
+        .expect("plan");
+        let decision = &plan.decisions[0];
+        assert_eq!(decision.disposition, WorkDisposition::Unaffected);
+        assert!(
+            decision.reasons.iter().any(|reason| matches!(
+                reason,
+                crate::application::change_tracking::planner::SchedulingReason::BoundaryExcludedAddition {
+                    excluded_by,
+                    ..
+                } if excluded_by.iter().any(|detector| detector == "detector.functions")
+            )),
+            "boundary exclusion should be auditable: {:?}",
+            decision.reasons
+        );
+
+        let assessment = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+        assert_eq!(assessment.works[0].disposition, WorkDisposition::Unaffected);
+    }
+
+    #[test]
+    fn a_matching_or_unknown_added_kind_remains_unknown() {
+        for source in [
+            b"pub fn delta() {}\n".as_slice(),
+            b"struct Delta {}\n".as_slice(),
+        ] {
+            let fake = provider(&[
+                ("main", &[], &[("src/a.rs", ALPHA_V1)]),
+                (
+                    "feature",
+                    &["main"],
+                    &[("src/a.rs", ALPHA_V1), ("src/new.rs", source)],
+                ),
+            ]);
+            let base = produce(&fake, "main", None);
+            let mut head = produce(&fake, "feature", None);
+            if source.starts_with(b"struct") {
+                let definition = head
+                    .facts
+                    .facts
+                    .iter_mut()
+                    .find(|fact| {
+                        fact.predicate.as_str() == "core:defines"
+                            && fact.provenance.detail.as_deref() == Some("kind=Struct")
+                    })
+                    .expect("struct definition");
+                definition.provenance.detail = None;
+            }
+            let changes = fake
+                .changes_between(&base.revision, &head.revision)
+                .expect("changes");
+            let index = index_with_function_boundary(&base);
+            let assessment = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+
+            assert_eq!(assessment.works[0].disposition, WorkDisposition::Unknown);
+        }
+    }
+
+    #[test]
+    fn untrusted_boundaries_never_exclude_a_new_fact() {
+        let fake = provider(&[
+            ("main", &[], &[("src/a.rs", ALPHA_V1)]),
+            (
+                "feature",
+                &["main"],
+                &[("src/a.rs", ALPHA_V1), ("src/new.rs", b"struct Delta {}\n")],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let valid = index_with_function_boundary(&base);
+        let mut indexes = vec![valid.clone()];
+        indexes[0].records[0].read_boundary = None;
+
+        let mut unsupported = valid.clone();
+        unsupported.records[0]
+            .read_boundary
+            .as_mut()
+            .unwrap()
+            .schema = "cognicode.detector-read-boundary/v99".to_string();
+        indexes.push(unsupported);
+
+        let mut incomplete = valid.clone();
+        incomplete.records[0]
+            .read_boundary
+            .as_mut()
+            .unwrap()
+            .complete = false;
+        indexes.push(incomplete);
+
+        let mut mismatched_identity = valid.clone();
+        mismatched_identity.records[0]
+            .identity
+            .version
+            .push_str("-changed");
+        indexes.push(mismatched_identity);
+
+        let mut mismatched_snapshot = valid.clone();
+        mismatched_snapshot.records[0]
+            .read_boundary
+            .as_mut()
+            .unwrap()
+            .snapshot = SnapshotId(999);
+        indexes.push(mismatched_snapshot);
+
+        let mut mixed = valid.clone();
+        let mut missing_boundary = mixed.records[0].clone();
+        missing_boundary.read_boundary = None;
+        mixed.records.push(missing_boundary);
+        indexes.push(mixed);
+
+        let mut truncated = valid;
+        truncated.records[0].observed_truncated = true;
+        indexes.push(truncated);
+
+        for index in indexes {
+            let answer = assess_reuse(&base, &head, &changes, Some(&index)).expect("reuse");
+            assert_eq!(
+                answer.works[0].disposition,
+                WorkDisposition::Unknown,
+                "untrusted boundary must not exclude additions"
+            );
+        }
+    }
+
+    #[test]
+    fn aggregate_scope_stays_unknown_even_with_a_complete_boundary() {
+        let fake = provider(&[
+            ("main", &[], &[("src/a.rs", ALPHA_V1)]),
+            (
+                "feature",
+                &["main"],
+                &[("src/a.rs", ALPHA_V1), ("src/new.rs", b"struct Delta {}\n")],
+            ),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_with_function_boundary(&base);
+        let mut dependencies = dependencies_on(&index, base.facts.snapshot);
+        dependencies[0].read_scope = Some(
+            crate::application::change_tracking::read_scope::ReadScope::from_run(
+                &index.records[0],
+                &base.facts,
+                crate::application::change_tracking::read_scope::ReadBreadth::Aggregate,
+            )
+            .expect("trusted aggregate scope"),
+        );
+
+        let plan = plan_between(
+            &base.facts,
+            &head.facts,
+            &changes,
+            &BTreeSet::new(),
+            &dependencies,
+        )
+        .expect("plan");
+
+        assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unknown);
+    }
+
+    #[test]
+    fn escalated_changes_stay_unknown_even_with_a_complete_boundary() {
+        let fake = provider(&[
+            ("main", &[], &[("src/a.rs", ALPHA_V1)]),
+            ("feature", &["main"], &[("src/a.rs", ALPHA_V1)]),
+        ]);
+        let base = produce(&fake, "main", None);
+        let head = produce(&fake, "feature", None);
+        let changes = fake
+            .changes_between(&base.revision, &head.revision)
+            .expect("changes");
+        let index = index_with_function_boundary(&base);
+        let unknown_changes = ChangeSet::explicit(
+            changes.base().clone(),
+            changes.head().clone(),
+            changes
+                .changes()
+                .iter()
+                .cloned()
+                .chain([crate::domain::scm::Change::unknown(path("unknown.bin"))])
+                .collect(),
+        );
+        let answer = assess_reuse(&base, &head, &unknown_changes, Some(&index)).expect("reuse");
+
+        assert_eq!(answer.works[0].disposition, WorkDisposition::Unknown);
     }
 
     #[test]

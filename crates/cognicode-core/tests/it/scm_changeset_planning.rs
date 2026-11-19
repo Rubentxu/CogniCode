@@ -80,6 +80,7 @@ fn dep(name: &str, execution: u64, facts: &[u64]) -> ExecutionDependency {
         execution: ExecutionId(execution),
         read_set: read_set(facts),
         read_scope: None,
+        read_boundary: None,
     }
 }
 
@@ -332,6 +333,7 @@ fn new_facts_and_truncated_lineage_are_never_unaffected() {
             execution: ExecutionId(2),
             read_set: truncated_read_set(&[100, 999], 1),
             read_scope: None,
+            read_boundary: None,
         },
     ];
     let plan = plan_between(&base, &head, &changes, &BTreeSet::new(), &deps).expect("plan");
