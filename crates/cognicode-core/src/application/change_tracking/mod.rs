@@ -39,3 +39,6 @@ pub mod mode_benchmark;
 
 #[cfg(feature = "evidence-kernel")]
 pub mod read_scope;
+
+#[cfg(feature = "evidence-kernel")]
+pub mod derived_reuse;

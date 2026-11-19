@@ -216,6 +216,10 @@ name = "fact_bridge_benchmarks"
 harness = false
 
 [[bench]]
+name = "derived_reuse_benchmarks"
+harness = false
+
+[[bench]]
 name = "b6_w2_reproducible_perf"
 harness = false
 required-features = ["persistence"]
