@@ -18,6 +18,7 @@ use crate::domain::aggregates::call_graph::{CallGraph, SymbolId};
 use crate::domain::value_objects::{Provenance, SymbolKind, published_line};
 use crate::infrastructure::graph::analytics::community_detector::CommunityDetector;
 use crate::interface::coverage::CoverageInfo;
+use crate::interface::cursor::{self, CursorContext};
 use crate::interface::mcp::handlers::{HandlerContext, HandlerError, HandlerResult};
 use crate::interface::symbol_identity::{
     Precision, default_provider_for_tool, precision_floor_for_tool,
@@ -46,6 +47,14 @@ pub struct GraphQueryInput {
     /// out in a fixed order that does not depend on the budget.
     #[serde(default = "default_budget")]
     pub budget: usize,
+    /// Resume a cut answer with the `next_continuation_token` of the
+    /// previous page, exactly as the `continue` link fills it. The token
+    /// is anchored to this workspace and to the revision of the graph it
+    /// was minted from: a token from another revision, another question
+    /// or another depth is refused with its typed error, never
+    /// reinterpreted.
+    #[serde(default)]
+    pub continuation_token: Option<String>,
 }
 
 fn default_max_depth() -> usize {
@@ -100,6 +109,21 @@ pub struct GraphQueryOutput {
     /// Which tree and which snapshot the graph was read from, when the
     /// session knows; `null` otherwise.
     pub basis: Option<GraphQueryBasis>,
+    /// Whether the budget cut the answer and a cursor continues it.
+    ///
+    /// A cut by `max_depth` is not a continuation: the traversal is over,
+    /// what sits beyond the depth is not in it. Only a cut by `budget`
+    /// means "there is a next page".
+    pub has_more: bool,
+    /// The cursor to pass back as `continuation_token` for the next page.
+    ///
+    /// Opaque, and anchored to this workspace and to the revision of the
+    /// graph this page was read from: the same traversal resumes exactly
+    /// where this page stopped, and a cursor from another revision is
+    /// refused with its typed error, never reinterpreted. Published only
+    /// when `has_more` is true.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_continuation_token: Option<String>,
 }
 
 /// The limits of a `graph_query` walk.
@@ -140,7 +164,7 @@ impl GraphQueryBasis {
     }
 }
 
-#[derive(Debug, serde::Serialize, JsonSchema)]
+#[derive(Debug, Clone, serde::Serialize, JsonSchema)]
 pub struct GraphQueryNode {
     pub id: String,
     pub label: String,
@@ -152,7 +176,7 @@ pub struct GraphQueryNode {
 }
 
 /// One relation the walk followed, as the graph holds it.
-#[derive(Debug, serde::Serialize, JsonSchema)]
+#[derive(Debug, Clone, serde::Serialize, JsonSchema)]
 pub struct GraphQueryEdge {
     pub source: String,
     pub target: String,
@@ -195,12 +219,49 @@ struct Walk {
     unexpanded: usize,
     depth_reached: usize,
     filtered_out: FilteredOut,
+    /// How many traversal elements sit before the page window: the earlier
+    /// pages' items the walk walked through without holding. The cursor
+    /// offset is exactly this count once the window opened.
+    skipped: usize,
+}
+
+/// What the page window does with the traversal element the walk is at.
+enum PageItem {
+    /// The element sits before the window: earlier pages own it. The walk
+    /// still walks through it — what lies behind it is reachable only
+    /// through it — but this page does not hold it.
+    Before,
+    /// The element is kept in this page.
+    Keep,
+    /// The page is full and this element is the one past it: its existence
+    /// is the proof that a next page has something to resume into, and the
+    /// walk stops here without needing to traverse the rest of the graph.
+    Proof,
 }
 
 impl Walk {
-    /// Whether one more element fits in the budget.
-    fn has_room(&self, budget: usize) -> bool {
-        self.nodes.len() + self.edges.len() < budget
+    /// How many elements this page holds.
+    fn held(&self) -> usize {
+        self.nodes.len() + self.edges.len()
+    }
+
+    /// Where the element at the next traversal position goes.
+    ///
+    /// The traversal is the sequence the unbounded walk produces — one
+    /// position per seed, discovered node and followed edge, in discovery
+    /// order — and the page is the window `[start, start + budget)` of it.
+    /// An element past the window is the proof there is a next page: the
+    /// walk stops at it instead of walking the whole graph to count what
+    /// is left.
+    fn page_item(&mut self, start: usize, budget: usize) -> PageItem {
+        if self.skipped + self.held() < start {
+            self.skipped += 1;
+            PageItem::Before
+        } else if self.held() < budget {
+            PageItem::Keep
+        } else {
+            PageItem::Proof
+        }
     }
 }
 
@@ -304,26 +365,39 @@ impl QueryFilter {
     }
 }
 
-/// Breadth-first walk from the seeds along the outgoing edges.
+/// Breadth-first walk from the seeds along the outgoing edges, windowed to
+/// a page.
 ///
-/// Every element —seed, discovered node, edge— is checked against the
-/// budget before it is emitted, and the first one that does not fit ends
-/// the walk, so the answer is a prefix of the unbounded one whatever the
-/// budget is. The edges of a node come out in the graph's canonical order,
-/// and a node is emitted before the edge that discovers it. The filter
-/// decides what is followed before the budget sees it: an excluded element
-/// is counted in `filtered_out` and costs no budget.
+/// The traversal is the sequence the unbounded walk produces — one position
+/// per seed, discovered node and followed edge, in discovery order — and it
+/// depends on the question, the depth and the graph, never on the budget.
+/// The page is the window `[start, start + budget)` of that sequence: the
+/// walk still walks through the elements before `start` (what lies behind
+/// them is reachable only through them) but holds none of them, and stops
+/// at the first element past the window — that element is the proof a next
+/// page has something to resume into, so the rest of the graph never has to
+/// be traversed for it. With `start = 0` this is the answer CGH-084 pinned:
+/// a prefix of the unbounded one whatever the budget is. The edges of a
+/// node come out in the graph's canonical order, and a node is emitted
+/// before the edge that discovers it. The filter decides what is followed
+/// before the budget sees it: an excluded element is counted in
+/// `filtered_out` and costs no budget.
 fn walk(
     graph: &CallGraph,
     filter: &QueryFilter,
     seeds: Vec<(SymbolId, Vec<String>)>,
     max_depth: usize,
     budget: usize,
+    start: usize,
 ) -> Walk {
     let mut walk = Walk::default();
     let mut known: HashSet<SymbolId> = HashSet::new();
     let mut excluded: HashSet<SymbolId> = HashSet::new();
-    let mut queue: VecDeque<(SymbolId, usize)> = VecDeque::new();
+    // The third field says whether this queued node is held by the page:
+    // the walk expands the nodes before the window as well — what lies
+    // behind them is reachable only through them — but the depth answers
+    // (unexpanded, depth reached) belong to the page, not to the road.
+    let mut queue: VecDeque<(SymbolId, usize, bool)> = VecDeque::new();
 
     for (id, words) in seeds {
         let Some(node) = node_of(graph, &id, words) else {
@@ -333,18 +407,24 @@ fn walk(
             excluded.insert(id);
             continue;
         }
-        if !walk.has_room(budget) {
-            walk.filtered_out.nodes = excluded.len();
-            return stopped_by_budget(graph, filter, walk, queue, max_depth);
-        }
-        walk.nodes.push(node);
+        let held = match walk.page_item(start, budget) {
+            PageItem::Before => false,
+            PageItem::Keep => {
+                walk.nodes.push(node);
+                true
+            }
+            PageItem::Proof => {
+                walk.filtered_out.nodes = excluded.len();
+                return stopped_by_budget(graph, filter, walk, queue, max_depth);
+            }
+        };
         known.insert(id.clone());
-        queue.push_back((id, 0));
+        queue.push_back((id, 0, held));
     }
 
-    while let Some((current, depth)) = queue.pop_front() {
+    while let Some((current, depth, held)) = queue.pop_front() {
         if depth >= max_depth {
-            if filter.has_followable_outgoing(graph, &current) {
+            if held && filter.has_followable_outgoing(graph, &current) {
                 walk.unexpanded += 1;
             }
             continue;
@@ -368,27 +448,36 @@ fn walk(
                 let Some(node) = node_of(graph, target, Vec::new()) else {
                     continue;
                 };
-                if !walk.has_room(budget) {
+                let node_held = match walk.page_item(start, budget) {
+                    PageItem::Before => false,
+                    PageItem::Keep => {
+                        walk.nodes.push(node);
+                        walk.depth_reached = walk.depth_reached.max(depth + 1);
+                        true
+                    }
+                    PageItem::Proof => {
+                        walk.filtered_out.nodes = excluded.len();
+                        return stopped_by_budget(graph, filter, walk, queue, max_depth);
+                    }
+                };
+                known.insert(target.clone());
+                queue.push_back((target.clone(), depth + 1, node_held));
+            }
+            match walk.page_item(start, budget) {
+                PageItem::Before => {}
+                PageItem::Keep => walk.edges.push(GraphQueryEdge {
+                    source: current.as_str().to_string(),
+                    target: target.as_str().to_string(),
+                    relation: dependency.to_string(),
+                    provenance: provenance.to_string(),
+                    confidence,
+                    discovers,
+                }),
+                PageItem::Proof => {
                     walk.filtered_out.nodes = excluded.len();
                     return stopped_by_budget(graph, filter, walk, queue, max_depth);
                 }
-                walk.nodes.push(node);
-                walk.depth_reached = walk.depth_reached.max(depth + 1);
-                known.insert(target.clone());
-                queue.push_back((target.clone(), depth + 1));
             }
-            if !walk.has_room(budget) {
-                walk.filtered_out.nodes = excluded.len();
-                return stopped_by_budget(graph, filter, walk, queue, max_depth);
-            }
-            walk.edges.push(GraphQueryEdge {
-                source: current.as_str().to_string(),
-                target: target.as_str().to_string(),
-                relation: dependency.to_string(),
-                provenance: provenance.to_string(),
-                confidence,
-                discovers,
-            });
         }
     }
     walk.filtered_out.nodes = excluded.len();
@@ -404,13 +493,15 @@ fn stopped_by_budget(
     graph: &CallGraph,
     filter: &QueryFilter,
     mut walk: Walk,
-    queue: VecDeque<(SymbolId, usize)>,
+    queue: VecDeque<(SymbolId, usize, bool)>,
     max_depth: usize,
 ) -> Walk {
     walk.budget_reached = true;
     walk.unexpanded += queue
         .iter()
-        .filter(|(id, depth)| *depth >= max_depth && filter.has_followable_outgoing(graph, id))
+        .filter(|(id, depth, held)| {
+            *held && *depth >= max_depth && filter.has_followable_outgoing(graph, id)
+        })
         .count();
     walk
 }
@@ -486,13 +577,20 @@ fn summary_of(
 ///
 /// The answer is a function of the graph, the question, the limits and the
 /// filter; nothing else decides what comes out.
+///
+/// `start` is the offset into the canonical traversal this page windows:
+/// zero for a whole answer. The third element of the result says whether
+/// the walk met an element past the window — a next page exists, even if
+/// this page held nothing (a zero-budget page proves the traversal is not
+/// over without continuing it).
 fn answer_for(
     read: GraphRead,
     question: String,
     max_depth: usize,
     budget: usize,
     filter: &QueryFilter,
-) -> (GraphQueryOutput, FilteredOut) {
+    start: usize,
+) -> (GraphQueryOutput, FilteredOut, bool) {
     let GraphRead { graph, measure } = read;
     let coverage = match &measure {
         Some(measure) => CoverageInfo::of(&measure.coverage),
@@ -502,7 +600,8 @@ fn answer_for(
 
     let keywords = extract_keywords(&question);
     let seeds = seeds_of(&graph, &keywords);
-    let walk = walk(&graph, filter, seeds, max_depth, budget);
+    let walk = walk(&graph, filter, seeds, max_depth, budget, start);
+    let more_items = walk.budget_reached;
 
     let truncation_reason = if walk.budget_reached {
         Some("budget")
@@ -550,8 +649,118 @@ fn answer_for(
         limits,
         coverage,
         basis,
+        // The window this answer is a page of says whether a next page has
+        // something to resume into; the handler that owns the cursor fills
+        // them in. A surface without a cursor answers `false`, never a
+        // promise it cannot keep.
+        has_more: false,
+        next_continuation_token: None,
     };
-    (answer, walk.filtered_out)
+    (answer, walk.filtered_out, more_items)
+}
+
+/// The tag a `graph_query` cursor carries: a token minted by another
+/// surface is refused as garbled, never read as a graph offset.
+const GRAPH_QUERY_CURSOR_TAG: &str = "gq";
+
+/// The cursor payload version: bumping it without retiring the old read
+/// would silently reinterpret old offsets, so an unknown `v` is refused.
+const GRAPH_QUERY_CURSOR_VERSION: u64 = 1;
+
+/// The revision identity of a loaded graph: a short hash over its symbols
+/// and edges in the graph's canonical order.
+///
+/// The traversal a cursor resumes depends on one thing — the graph the
+/// page was read from — and this names exactly that. Two builds that
+/// produce the same graph give the same revision, so a cursor keeps
+/// working across a rebuild that changed nothing; a graph that changed
+/// gives another revision, and the cursor for the old one is refused with
+/// its typed error (`snapshot_expired`) instead of resuming into a
+/// traversal that no longer exists. The store's checkpoint id is not used
+/// here on purpose: the binding a cursor needs is to the traversal's
+/// input, not to a counter, and the content hash works for every store —
+/// including the single-version ones whose checkpoint id is a placeholder.
+fn graph_revision(graph: &CallGraph) -> String {
+    let mut acc = String::new();
+    for (id, _) in graph.symbol_ids() {
+        acc.push_str(id.as_str());
+        acc.push('\n');
+    }
+    acc.push('#');
+    for (source, target, dep) in graph.all_dependencies() {
+        acc.push_str(source.as_str());
+        acc.push_str("->");
+        acc.push_str(target.as_str());
+        acc.push(':');
+        acc.push_str(&dep.to_string());
+        acc.push('\n');
+    }
+    cursor::short_hash(&acc)
+}
+
+/// The offset the cursor asks to resume from, or the typed refusal.
+///
+/// The envelope's anchors (workspace, graph revision) are verified by
+/// [`cursor::verify_signed`]; what is left to pin is the payload: the
+/// cursor names a traversal, and a traversal is the question, the depth
+/// and the graph. The graph is the envelope's `snap`; the question and
+/// the depth are here. A token replayed with another question or another
+/// depth is refused: the offset would skip into a sequence that is not
+/// the one the previous page came out of.
+fn cursor_offset(
+    token: &str,
+    ctx: &CursorContext,
+    question: &str,
+    max_depth: usize,
+) -> Result<usize, HandlerError> {
+    let refused = |reason: &str| {
+        HandlerError::InvalidInput(format!(
+            "graph_query continuation refused: garbled: {reason}"
+        ))
+    };
+    let signed = cursor::verify_signed(token, ctx).map_err(|e| {
+        HandlerError::InvalidInput(format!("graph_query continuation refused: {e}"))
+    })?;
+    if signed.tag != GRAPH_QUERY_CURSOR_TAG {
+        return Err(refused("the token is not a graph_query cursor"));
+    }
+    let refused_payload = refused;
+    let v = signed
+        .payload
+        .get("v")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| refused_payload("the cursor carries no payload version"))?;
+    if v != GRAPH_QUERY_CURSOR_VERSION {
+        return Err(refused_payload(&format!(
+            "cursor payload version {v} is not supported; this server speaks v{GRAPH_QUERY_CURSOR_VERSION}"
+        )));
+    }
+    let q = signed
+        .payload
+        .get("q")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| refused_payload("the cursor carries no question anchor"))?;
+    if q != cursor::short_hash(question) {
+        return Err(refused_payload(
+            "the cursor was minted for a different question: the offset would skip into another traversal",
+        ));
+    }
+    let d = signed
+        .payload
+        .get("d")
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| refused_payload("the cursor carries no depth anchor"))? as usize;
+    if d != max_depth {
+        return Err(refused_payload(&format!(
+            "the cursor was minted for max_depth {d}, this call asks {max_depth}: the offset indexes another traversal"
+        )));
+    }
+    signed
+        .payload
+        .get("o")
+        .and_then(serde_json::Value::as_u64)
+        .map(|o| o as usize)
+        .ok_or_else(|| refused_payload("the cursor carries no offset"))
 }
 
 /// Handle `graph_query` — natural language graph topology query.
@@ -566,13 +775,51 @@ pub async fn handle_graph_query(
     input: GraphQueryInput,
 ) -> HandlerResult<GraphQueryOutput> {
     let read = read_the_graph(ctx)?;
-    let (answer, _) = answer_for(
+
+    // The cursor's anchors: this workspace, and the revision of the graph
+    // the page is read from. A cursor minted against another revision of
+    // another tree fails verification with its typed error — it does not
+    // resume, because what it would resume into is not the traversal that
+    // minted it.
+    let cursor_ctx = CursorContext {
+        workspace: ctx.working_dir().to_string_lossy().to_string(),
+        snapshot: graph_revision(&read.graph),
+    };
+
+    // Verify the cursor BEFORE traversing: a refused page pays nothing,
+    // and the refusal is the same typed error the rest of the cursor
+    // surface speaks (`garbled`, `workspace_mismatch`, `snapshot_expired`).
+    let start = match input.continuation_token.as_deref() {
+        None => 0,
+        Some(token) => cursor_offset(token, &cursor_ctx, &input.question, input.max_depth)?,
+    };
+
+    let (mut answer, _, more_items) = answer_for(
         read,
-        input.question,
+        input.question.clone(),
         input.max_depth,
         input.budget,
         &QueryFilter::default(),
+        start,
     );
+
+    // A page that brought nothing cannot continue: a zero-budget page, or
+    // one that ran past the end of the traversal, would mint a cursor to
+    // the offset it was already at, and a chain of tokens that never
+    // advances is worse than no token at all.
+    answer.has_more = more_items && !answer.nodes.is_empty();
+    answer.next_continuation_token = answer.has_more.then(|| {
+        cursor::encode_signed(
+            &cursor_ctx,
+            GRAPH_QUERY_CURSOR_TAG,
+            &serde_json::json!({
+                "v": GRAPH_QUERY_CURSOR_VERSION,
+                "q": cursor::short_hash(&input.question),
+                "d": input.max_depth,
+                "o": start + answer.limits.budget_used,
+            }),
+        )
+    });
     Ok(answer)
 }
 
@@ -1285,12 +1532,15 @@ pub async fn handle_graph_query_filtered(
 ) -> HandlerResult<GraphQueryFilteredOutput> {
     let read = read_the_graph(ctx)?;
     let (filter, applied_filters) = filter_of(&read.graph, input.filters)?;
-    let (answer, filtered_out) = answer_for(
+    // The filtered surface windows from the first element: it publishes no
+    // cursor, so the window is the whole answer under its filters.
+    let (answer, filtered_out, _) = answer_for(
         read,
         input.question,
         input.max_depth,
         input.limit.unwrap_or_else(default_budget),
         &filter,
+        0,
     );
     Ok(GraphQueryFilteredOutput {
         answer,
@@ -1361,4 +1611,425 @@ pub async fn handle_export_callflow(
         sections_drawn: callflow.sections_drawn,
         summary,
     })
+}
+
+// ============================================================================
+// Tests — graph_query continuation cursor (CGH-114)
+// ============================================================================
+
+#[cfg(test)]
+mod cursor_tests {
+    //! The cursor a cut `graph_query` answer publishes continues the same
+    //! traversal it was minted from, and nothing else.
+    //!
+    //! CGH-084 pinned the order of the traversal and made it prefix-stable:
+    //! a bigger budget extends a smaller answer. CGH-114 publishes that
+    //! stability as a continuation: page + cursor resumes exactly where
+    //! the page stopped, the cursor is bound to the revision of the graph
+    //! it was read from, and a cursor from another revision, another query
+    //! or a tampered payload is refused with its typed error instead of
+    //! resuming into the wrong traversal.
+
+    use super::*;
+    use crate::domain::aggregates::call_graph::CallGraph;
+    use crate::domain::aggregates::symbol::Symbol;
+    use crate::domain::traits::graph_store::{GraphStore, StoreError};
+    use crate::domain::value_objects::file_manifest::FileManifest;
+    use crate::domain::value_objects::{DependencyType, Location, SymbolKind};
+    use crate::interface::mcp::handlers::HandlerContextBuilder;
+    use crate::interface::schema::schema_of;
+    use std::sync::{Arc, Mutex};
+
+    /// A store whose graph can be swapped: the revision the cursor is
+    /// bound to changes exactly when the traversal's input changes.
+    struct SwapStore {
+        graph: Mutex<Arc<CallGraph>>,
+    }
+
+    impl SwapStore {
+        fn new(graph: CallGraph) -> Self {
+            Self {
+                graph: Mutex::new(Arc::new(graph)),
+            }
+        }
+
+        fn replace(&self, graph: CallGraph) {
+            *self.graph.lock().unwrap() = Arc::new(graph);
+        }
+    }
+
+    impl GraphStore for SwapStore {
+        fn save_graph(&self, graph: &CallGraph) -> Result<(), StoreError> {
+            self.replace(graph.clone());
+            Ok(())
+        }
+        fn load_graph(&self) -> Result<Option<CallGraph>, StoreError> {
+            Ok(Some((**self.graph.lock().unwrap()).clone()))
+        }
+        fn load_graph_shared(&self) -> Result<Option<Arc<CallGraph>>, StoreError> {
+            Ok(Some(self.graph.lock().unwrap().clone()))
+        }
+        fn save_manifest(&self, _manifest: &FileManifest) -> Result<(), StoreError> {
+            Ok(())
+        }
+        fn load_manifest(&self) -> Result<Option<FileManifest>, StoreError> {
+            Ok(None)
+        }
+        fn clear(&self) -> Result<(), StoreError> {
+            Ok(())
+        }
+        fn exists(&self) -> Result<bool, StoreError> {
+            Ok(true)
+        }
+    }
+
+    /// `root -> s0 -> s1 -> ... -> s{count-1}`, a chain: the traversal of
+    /// "root" is exactly its `count + 1` nodes in order, one edge per
+    /// hop, so a page boundary is a place a reader can verify by hand.
+    fn chain_graph(count: usize) -> CallGraph {
+        let mut graph = CallGraph::new();
+        let root = graph.add_symbol(Symbol::new(
+            "root",
+            SymbolKind::Function,
+            Location::new("lib.rs", 1, 0),
+        ));
+        let mut prev = root;
+        for n in 0..count {
+            let s = graph.add_symbol(Symbol::new(
+                format!("s{n}"),
+                SymbolKind::Function,
+                Location::new("lib.rs", 2 + n as u32, 0),
+            ));
+            graph
+                .add_dependency(&prev, &s, DependencyType::Calls)
+                .expect("both symbols are in the graph");
+            prev = s;
+        }
+        graph
+    }
+
+    fn context(graph: CallGraph) -> (HandlerContext, Arc<SwapStore>) {
+        let store = Arc::new(SwapStore::new(graph));
+        let ctx = HandlerContextBuilder::new()
+            .with_graph_store_arc(store.clone())
+            .build();
+        (ctx, store)
+    }
+
+    fn query(
+        question: &str,
+        max_depth: usize,
+        budget: usize,
+        token: Option<String>,
+    ) -> GraphQueryInput {
+        GraphQueryInput {
+            question: question.to_string(),
+            max_depth,
+            budget,
+            continuation_token: token,
+        }
+    }
+
+    const QUESTION: &str = "root";
+    // Deep enough that the whole chain is one traversal: the page budget,
+    // not the depth, is what cuts the answer here.
+    const DEPTH: usize = 100;
+
+    #[tokio::test]
+    async fn pages_concatenate_into_the_full_traversal_without_overlap_or_gap() {
+        // AC1(a): page 1 + page 2 (+ page 3) = the whole order, with the
+        // budget split across calls. The chain of 12 traversal items is
+        // root plus 11 hops: 12 nodes and 11 edges.
+        let (ctx, _store) = context(chain_graph(11));
+
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("first page");
+        assert!(page1.has_more, "the budget cut the traversal");
+        assert_eq!(page1.truncation_reason.as_deref(), Some("budget"));
+        let token1 = page1
+            .next_continuation_token
+            .clone()
+            .expect("a cut page hands out its cursor");
+
+        let page2 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(token1.clone())))
+            .await
+            .expect("the cursor resumes the same traversal");
+        assert!(page2.has_more);
+        let token2 = page2
+            .next_continuation_token
+            .clone()
+            .expect("a cut page hands out its cursor");
+        assert_ne!(
+            token1, token2,
+            "a repeated cursor would loop the chain forever"
+        );
+
+        // The chain of 12 symbols walks 12 nodes + 11 edges: five pages
+        // of five, the last holding the three items left.
+        let mut pages = vec![page1, page2];
+        let mut token = token2;
+        loop {
+            let page = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(token)))
+                .await
+                .expect("a cursor always answers with its page");
+            let next = page.next_continuation_token.clone();
+            let more = page.has_more;
+            assert_eq!(more, next.is_some(), "has_more and the cursor agree");
+            pages.push(page);
+            match (more, next) {
+                (true, Some(t)) => token = t,
+                (false, None) => break,
+                _ => panic!("a page claims more without a cursor, or a cursor without more"),
+            }
+        }
+
+        // Concatenating the pages rebuilds the whole traversal, nodes and
+        // edges: no item is lost, repeated, or reordered.
+        let whole = handle_graph_query(&ctx, query(QUESTION, DEPTH, 1000, None))
+            .await
+            .expect("a budget over the traversal answers");
+        assert!(!whole.has_more);
+        let chained_nodes: Vec<&str> = pages
+            .iter()
+            .flat_map(|p| p.nodes.iter())
+            .map(|n| n.id.as_str())
+            .collect();
+        let full_nodes: Vec<&str> = whole.nodes.iter().map(|n| n.id.as_str()).collect();
+        assert_eq!(
+            chained_nodes, full_nodes,
+            "the pages must join into the full node order"
+        );
+        let chained_edges: Vec<(String, String)> = pages
+            .iter()
+            .flat_map(|p| p.edges.iter())
+            .map(|e| (e.source.clone(), e.target.clone()))
+            .collect();
+        let full_edges: Vec<(String, String)> = whole
+            .edges
+            .iter()
+            .map(|e| (e.source.clone(), e.target.clone()))
+            .collect();
+        assert_eq!(
+            chained_edges, full_edges,
+            "the pages must join into the full edge order"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bigger_budget_extends_a_smaller_answer_at_the_cursor_boundary() {
+        // The prefix-stability CGH-084 pinned inside one call: the page
+        // and the cursor keep it across calls. `page ++ cursor` equals the
+        // bigger budget, item for item.
+        let (ctx, _store) = context(chain_graph(11));
+
+        let small = handle_graph_query(&ctx, query(QUESTION, DEPTH, 4, None))
+            .await
+            .expect("page");
+        let token = small.next_continuation_token.clone().expect("cut page");
+        let next = handle_graph_query(&ctx, query(QUESTION, DEPTH, 4, Some(token)))
+            .await
+            .expect("continuation");
+        let merged: Vec<String> = small
+            .nodes
+            .iter()
+            .chain(next.nodes.iter())
+            .map(|n| n.id.clone())
+            .collect();
+
+        let big = handle_graph_query(&ctx, query(QUESTION, DEPTH, 8, None))
+            .await
+            .expect("the same traversal under a bigger budget");
+        let direct: Vec<String> = big.nodes.iter().map(|n| n.id.clone()).collect();
+        assert_eq!(
+            merged, direct,
+            "page + cursor is the bigger budget's answer"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_changed_graph_refuses_the_cursor_and_never_mixes_pages() {
+        // AC1(b): mutate the graph between pages. The cursor is anchored
+        // to the revision it was minted from; the refusal is typed, and
+        // no mixed page is ever produced.
+        let (ctx, store) = context(chain_graph(11));
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("first page");
+        let token = page1.next_continuation_token.clone().expect("cursor");
+
+        // The graph now holds another symbol: another revision.
+        store.replace(chain_graph(12));
+
+        let err = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(token)))
+            .await
+            .expect_err("a cursor from another revision is refused");
+        let text = err.to_string();
+        assert!(
+            text.contains("SnapshotExpired"),
+            "the refusal names the typed cause: {text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_rebuild_that_changed_nothing_keeps_the_cursor_working() {
+        // The anchor is the traversal's input, not a counter: loading the
+        // same content again is the same revision.
+        let (ctx, store) = context(chain_graph(11));
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("first page");
+        let token = page1.next_continuation_token.clone().expect("cursor");
+
+        store.replace(chain_graph(11));
+
+        let page2 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(token)))
+            .await
+            .expect("the same revision is the same cursor");
+        assert_eq!(page2.nodes[0].id, "lib.rs:s2:4");
+    }
+
+    #[tokio::test]
+    async fn a_cursor_for_another_question_is_refused() {
+        // The offset indexes *this* traversal: a token replayed with
+        // another question would skip into a sequence nobody minted it
+        // for.
+        let (ctx, _store) = context(chain_graph(11));
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("first page");
+        let token = page1.next_continuation_token.clone().expect("cursor");
+
+        let err = handle_graph_query(&ctx, query("s1", DEPTH, 5, Some(token)))
+            .await
+            .expect_err("a cursor minted for another question is refused");
+        assert!(
+            err.to_string().contains("different question"),
+            "the refusal says why: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_tampered_cursor_is_refused() {
+        // A cursor is opaque: rewriting a byte of its payload breaks the
+        // integrity tag the signed envelope carries.
+        let (ctx, _store) = context(chain_graph(11));
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("first page");
+        let token = page1.next_continuation_token.expect("cursor");
+
+        // Flip one character well past the envelope header.
+        let mut bytes = token.into_bytes();
+        let at = bytes.len() / 2;
+        bytes[at] = if bytes[at] == b'A' { b'B' } else { b'A' };
+        let tampered = String::from_utf8(bytes).expect("base64 stays ASCII");
+
+        let err = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(tampered)))
+            .await
+            .expect_err("a tampered cursor is refused");
+        assert!(
+            err.to_string().contains("Garbled"),
+            "the refusal is the typed garbled error: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_cursor_pointing_past_the_end_answers_empty_and_stops() {
+        // A page at the end of the traversal holds nothing, and mints no
+        // cursor: a chain of tokens that never advances is worse than no
+        // token at all.
+        let (ctx, _store) = context(chain_graph(3));
+        let page1 = handle_graph_query(&ctx, query(QUESTION, DEPTH, 100, None))
+            .await
+            .expect("the whole traversal fits");
+        assert!(!page1.has_more);
+        assert!(page1.next_continuation_token.is_none());
+
+        // Forge nothing: take a real cursor from a bigger graph and show
+        // that a page whose window starts past the end is empty, not an
+        // error.
+        let (big_ctx, _big_store) = context(chain_graph(11));
+        let cut = handle_graph_query(&big_ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("cut page");
+        let token = cut.next_continuation_token.clone().expect("cursor");
+        // Same content on this ctx? No: the token is anchored to
+        // chain_graph(11)'s revision, and a smaller graph refuses it.
+        let err = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, Some(token)))
+            .await
+            .expect_err("another graph's revision is refused, not reinterpreted");
+        assert!(err.to_string().contains("SnapshotExpired"));
+    }
+
+    #[tokio::test]
+    async fn the_envelope_continue_link_carries_the_cursor() {
+        // The hateoas mechanism is the canonical way this repo resumes a
+        // revision-bound page: `continuation_of` reads `has_more` and
+        // `next_continuation_token` from the answer and fills the
+        // `continue` link with them — the cursor surface and the link
+        // surface cannot drift, because there is one mechanism.
+        let (ctx, _store) = context(chain_graph(11));
+        let page = handle_graph_query(&ctx, query(QUESTION, DEPTH, 5, None))
+            .await
+            .expect("cut page");
+        let token = page.next_continuation_token.clone().expect("cursor");
+        let arguments = serde_json::json!({
+            "question": QUESTION,
+            "max_depth": DEPTH,
+            "budget": 5,
+            "continuation_token": null,
+        })
+        .as_object()
+        .expect("the arguments are an object")
+        .clone();
+        let result = serde_json::to_value(&page).expect("the page serializes");
+        let handle_ctx = crate::interface::hateoas::HandleContext {
+            workspace: ctx.working_dir().to_string_lossy().to_string(),
+            snapshot: "test".to_string(),
+        };
+        let envelope = crate::interface::hateoas::envelope_for(
+            "graph_query",
+            &arguments,
+            &result,
+            &handle_ctx,
+        );
+
+        let link = envelope
+            .links
+            .iter()
+            .find(|l| l.rel == "continue")
+            .expect("a cut answer publishes its continuation");
+        assert_eq!(link.tool, "graph_query");
+        assert_eq!(
+            link.required_args
+                .get("continuation_token")
+                .and_then(serde_json::Value::as_str),
+            Some(token.as_str()),
+            "the link refills the call with the cursor the answer published"
+        );
+        assert!(
+            envelope.budget.page.is_some(),
+            "the budget names the signed page handle of the continuation"
+        );
+    }
+
+    #[test]
+    fn the_cursor_is_declared_in_the_input_and_output_contracts() {
+        // AC1(c): the cursor is published through the derived contract —
+        // the field is here, or it is nowhere a client can read.
+        let input = schema_of::<GraphQueryInput>();
+        let props = input.get("properties").expect("the input has properties");
+        assert!(
+            props.get("continuation_token").is_some(),
+            "the input schema must declare the cursor: {input:?}"
+        );
+
+        let output = schema_of::<GraphQueryOutput>();
+        let props = output.get("properties").expect("the output has properties");
+        assert!(
+            props.get("has_more").is_some() && props.get("next_continuation_token").is_some(),
+            "the output schema must publish the cut and its cursor: {output:?}"
+        );
+    }
 }

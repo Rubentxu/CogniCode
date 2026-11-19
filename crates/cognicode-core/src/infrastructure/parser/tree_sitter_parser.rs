@@ -693,6 +693,20 @@ impl TreeSitterParser {
 
     /// Searches for an identifier name in a node tree (two-phase iterative DFS)
     fn find_identifier_name(&self, node: tree_sitter::Node, source: &str) -> Option<String> {
+        // Phase 0: the field the grammar declares is where the grammar
+        // puts the name. A Ruby `class Foo < Bar` names itself with a
+        // `constant`, a kind no child-scan below recognises, and a scan
+        // that then descends into the body would name the class after
+        // its first method. The field is authoritative, so it is asked
+        // first; languages whose name field already holds one of the
+        // scanned kinds answer the same either way.
+        if let Some(name) = node.child_by_field_name("name") {
+            let text = name.utf8_text(source.as_bytes()).unwrap_or("").trim();
+            if !text.is_empty() {
+                return Some(text.to_string());
+            }
+        }
+
         // Phase 1: Check direct children first
         //
         // `name` covers languages whose grammar emits a generic `name`

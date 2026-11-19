@@ -157,6 +157,7 @@ async fn reparse_on_edit_measures_the_replaced_graph_for_graph_query() {
             question: "funcion_0".into(),
             max_depth: 3,
             budget: 1500,
+            continuation_token: None,
         },
     )
     .await

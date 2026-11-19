@@ -23,6 +23,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::application::services::text_index::TextIndexConfig;
+use crate::application::services::text_index_policy::TextIndexPolicy;
 use crate::application::workspace_session::WorkspaceCapabilities;
 use crate::domain::traits::code_intelligence::CodeIntelligenceProvider;
 use crate::domain::traits::code_verifier::CodeVerifier;
@@ -57,6 +59,18 @@ pub fn code_intelligence_provider(root: &Path) -> CompositeProvider {
     }
 }
 
+/// The text index a deployment gets for `root` when nothing overrides it.
+///
+/// One rule for every surface: the CLI's session (through
+/// [`default_capabilities`]) and the MCP server (through the same function)
+/// ask [`TextIndexPolicy`], which measures the corpus and grants the index
+/// only above the threshold and inside the memory budget. `None` is the
+/// honest absence the reports already speak of — with the reason in the log,
+/// never silence.
+pub fn default_text_index_config(root: &Path) -> Option<TextIndexConfig> {
+    TextIndexPolicy::default().config_for(root)
+}
+
 /// The capabilities a deployment gets when nothing overrides them.
 ///
 /// `path_policy` stays a parameter because it is the one part that is *not* a
@@ -88,5 +102,6 @@ pub fn default_capabilities(
         graph,
         symbol_search,
         symbol_source,
+        text_index: default_text_index_config(root),
     }
 }

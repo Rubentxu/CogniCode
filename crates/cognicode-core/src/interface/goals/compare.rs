@@ -913,6 +913,7 @@ mod tests {
     const FUNCTION_DETECTOR: &str = "structure.function_definition";
     const TYPE_DETECTOR: &str = "structure.type_definition";
     const BUCKET_DETECTOR: &str = "infrastructure.unprotected_s3_bucket";
+    const HELM_DETECTOR: &str = "configuration.unused_helm_value";
 
     fn head_of(answer: &GoalCompare, detector: &str) -> CompareHeadFindings {
         answer
@@ -941,7 +942,9 @@ mod tests {
             answer.work_reuse_reason
         );
         let reuse = answer.work_reuse.expect("a verdict per detector");
-        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 3, 0));
+        // Four detectors write a read-set since the Helm production detector
+        // (CGH-082) joined the three originals.
+        assert_eq!((reuse.affected, reuse.unaffected, reuse.unknown), (0, 4, 0));
         assert!(
             reuse
                 .works
@@ -964,10 +967,36 @@ mod tests {
 
         assert_eq!(answer.work_reuse_status, "partial");
         let reuse = answer.work_reuse.expect("a verdict per detector");
+        // Trusted read boundaries (b2b6e127) sharpen the verdict: an added
+        // `core:defines` fact whose kind detail falls outside a detector's
+        // recorded boundary is proven outside its projection. The type
+        // detector's boundary names Struct/Class/Enum/Trait, so the new
+        // function cannot be one of its reads and its work is proven
+        // unaffected. The function detector's boundary does name functions,
+        // so the addition is inside its projection and its work stays
+        // unknown; the bucket detector records no boundary at all, and an
+        // absent boundary is never evidence of exclusion. A new fact still
+        // cannot be proven unread by a detector that could have read it —
+        // only by one whose trusted boundary says it could not.
+        let disposition = |detector: &str| {
+            reuse
+                .works
+                .iter()
+                .find(|work| work.work == detector)
+                .unwrap_or_else(|| panic!("no verdict for {detector}: {:?}", reuse.works))
+                .disposition
+                .clone()
+        };
+        assert_eq!(disposition(FUNCTION_DETECTOR), "unknown");
+        assert_eq!(disposition(TYPE_DETECTOR), "unaffected");
+        assert_eq!(disposition(BUCKET_DETECTOR), "unknown");
+        // The Helm detector records no read boundary either, so like the
+        // bucket detector it cannot be proven unread.
+        assert_eq!(disposition(HELM_DETECTOR), "unknown");
         assert_eq!(
             (reuse.unaffected, reuse.unknown),
-            (0, 3),
-            "a fact added since the base cannot be proven unread by any prior read-set"
+            (1, 3),
+            "the addition is proven outside only the type detector's boundary"
         );
     }
 
@@ -1099,7 +1128,12 @@ mod tests {
             .collect();
         assert_eq!(
             detectors,
-            [FUNCTION_DETECTOR, TYPE_DETECTOR, BUCKET_DETECTOR]
+            [
+                FUNCTION_DETECTOR,
+                TYPE_DETECTOR,
+                BUCKET_DETECTOR,
+                HELM_DETECTOR
+            ]
         );
         let types = head_of(&answer, TYPE_DETECTOR);
         assert_eq!(types.reuse, "reused", "{}", types.reason);

@@ -350,6 +350,16 @@ impl FileOperationsService {
         self
     }
 
+    /// The configuration of the text index, if this service has one.
+    ///
+    /// `None` is the same absence the reports show: searches answer without
+    /// narrowing and say so. Composition roots use this to check that the
+    /// policy they wired is the policy the service carries.
+    #[must_use]
+    pub fn text_index_config(&self) -> Option<&TextIndexConfig> {
+        self.text_index.as_ref().map(SharedTextIndex::config)
+    }
+
     /// Validates that a path is within the workspace and safe.
     ///
     /// Delegates to the [`PathPolicy`] port for security checks:

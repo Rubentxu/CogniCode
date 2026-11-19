@@ -80,6 +80,11 @@ impl SharedTextIndex {
     pub(crate) fn documents(&self) -> usize {
         self.index.read().len()
     }
+
+    /// The policy the index was built with.
+    pub(crate) fn config(&self) -> &TextIndexConfig {
+        &self.config
+    }
 }
 
 impl<'a> IndexedWalk<'a> {

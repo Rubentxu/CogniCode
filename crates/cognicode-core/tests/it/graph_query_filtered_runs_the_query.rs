@@ -182,6 +182,7 @@ async fn ask_unfiltered(ctx: &HandlerContext, question: &str, max_depth: usize) 
             question: question.to_string(),
             max_depth,
             budget: 1500,
+            continuation_token: None,
         },
     )
     .await

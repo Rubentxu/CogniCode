@@ -253,14 +253,25 @@ impl CogniCodeHandler {
             cognicode_core::interface::mcp::security::InputValidator::new()
                 .with_workspace(vec![canonical_root.clone()]),
         );
-        let file_ops_service = Arc::new(FileOperationsService::new(
+        let file_ops_service = FileOperationsService::new(
             canonical_root.to_string_lossy().as_ref(),
             validator,
             Arc::new(RustVerifier::new()),
             Arc::new(
                 cognicode_core::infrastructure::parser::syntax_analysis::TreeSitterSyntaxAnalysis::new(),
             ),
-        ));
+        );
+        // The same threshold-and-budget rule the CLI's session gets: both
+        // surfaces ask the one composition root, so the same corpus answers
+        // a search the same way through either of them. A refusal is in the
+        // log with its reason, and every report says the index is absent.
+        let file_ops_service = Arc::new(
+            match cognicode_core::interface::composition::default_text_index_config(&canonical_root)
+            {
+                Some(config) => file_ops_service.with_text_index(config),
+                None => file_ops_service,
+            },
+        );
 
         // The cache is where the product keeps what it derives, and the
         // daemon's socket lives in it: a client that has a cache has a
