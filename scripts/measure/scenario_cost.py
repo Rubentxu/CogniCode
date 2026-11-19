@@ -240,30 +240,85 @@ def run_timed(argv: list[str], cwd: Path, env: dict[str, str] | None = None) -> 
     return Sample((end - started) * 1000.0, lock_wait_ms(stamped, end), code)
 
 
-def git(repo: Path, *args: str) -> str:
-    env = {
-        "GIT_AUTHOR_NAME": "bench", "GIT_AUTHOR_EMAIL": "bench@example.invalid",
-        "GIT_COMMITTER_NAME": "bench", "GIT_COMMITTER_EMAIL": "bench@example.invalid",
-        "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null",
-    }
+def git_identity(repo: Path) -> tuple[str, str]:
+    """Read the admitted identity from the repository running the measurement."""
+    values = []
+    for key in ("user.name", "user.email"):
+        result = subprocess.run(
+            ["git", "config", "--get", key], cwd=repo, capture_output=True, text=True
+        )
+        value = result.stdout.strip()
+        if result.returncode != 0 or not value:
+            raise RuntimeError("fixture commits require a configured Git author identity")
+        values.append(value)
+    return values[0], values[1]
+
+
+def git(repo: Path, *args: str, identity: tuple[str, str] | None = None) -> str:
+    env = os.environ.copy()
+    for key in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL"):
+        env.pop(key, None)
+    env.update({"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"})
+    if identity is not None:
+        env.update(
+            {
+                "GIT_AUTHOR_NAME": identity[0],
+                "GIT_AUTHOR_EMAIL": identity[1],
+                "GIT_COMMITTER_NAME": identity[0],
+                "GIT_COMMITTER_EMAIL": identity[1],
+            }
+        )
     done = subprocess.run(
-        ["git", *args], cwd=repo, env={**os.environ, **env}, capture_output=True, text=True, check=True,
+        ["git", *args], cwd=repo, env=env, capture_output=True, text=True, check=True,
         timeout=QUICK_SECONDS,
     )
     return done.stdout.strip()
 
 
-def fixture_repo(corpus: Path, dest: Path, overlay: Path | None) -> None:
-    """The corpus base committed, then the overlay committed on top."""
+def fixture_repo(
+    corpus: Path,
+    dest: Path,
+    overlay: Path | None,
+    *,
+    identity_source: Path,
+    language: str | None = None,
+) -> None:
+    """Commit the corpus base and overlay, optionally scoped to one language."""
+    author_name, author_email = git_identity(identity_source)
     dest.mkdir(parents=True, exist_ok=True)
     git(dest, "init", "-q", "-b", "main")
-    shutil.copytree(corpus / "base", dest, dirs_exist_ok=True)
+    git(dest, "config", "user.name", author_name)
+    git(dest, "config", "user.email", author_email)
+    remote = dest.with_name(f"{dest.name}-origin.git")
+    git(dest.parent, "init", "--bare", "-q", str(remote))
+    git(dest, "remote", "add", "origin", str(remote))
+    source = corpus / "base" if language is None else corpus / "base" / language
+    shutil.copytree(source, dest if language is None else dest / language, dirs_exist_ok=True)
     git(dest, "add", "-A")
-    git(dest, "-c", "commit.gpgsign=false", "commit", "-q", "-m", "base")
+    git(
+        dest,
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "-q",
+        "-m",
+        "chore: establish benchmark base",
+        identity=(author_name, author_email),
+    )
     if overlay is not None:
         apply_overlay(overlay, dest)
         git(dest, "add", "-A")
-        git(dest, "-c", "commit.gpgsign=false", "commit", "-q", "--allow-empty", "-m", "edit")
+        git(
+            dest,
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "feat: apply benchmark edit",
+            identity=(author_name, author_email),
+        )
 
 
 def host(load_before: str) -> dict:
@@ -388,7 +443,13 @@ def guard_delta(repo_root: Path, guard_bin: Path, runs: int, only: set[str] | No
         with tempfile.TemporaryDirectory(prefix="scenario-cost-") as tmp:
             repo, support = Path(tmp) / "repo", Path(tmp) / "support"
             support.mkdir()
-            fixture_repo(corpus, repo, None)
+            fixture_repo(
+                corpus,
+                repo,
+                None,
+                identity_source=repo_root,
+                language="rust" if part == "rust" else None,
+            )
             (support / "pack.json").write_text(json.dumps(pack))
             (support / "edits.json").write_text(json.dumps(edits_json(overlay)))
             argv = [
