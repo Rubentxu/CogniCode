@@ -134,6 +134,8 @@ impl From<SearchContentInput> for SearchContentRequest {
             case_insensitive: input.case_insensitive,
             max_results: input.max_results,
             context_lines: input.context_lines,
+            cursor: input.cursor,
+            offset: input.offset,
         }
     }
 }
@@ -147,6 +149,7 @@ impl From<SearchContentResult> for SearchContentOutput {
             files_scanned: result.files_scanned,
             coverage,
             text_index: result.text_index,
+            next_cursor: result.next_cursor,
         }
     }
 }

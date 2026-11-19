@@ -435,6 +435,8 @@ fn search_for(pattern: &str) -> SearchContentInput {
         case_insensitive: None,
         max_results: None,
         context_lines: Some(0),
+        cursor: None,
+        offset: None,
     }
 }
 

@@ -2030,6 +2030,11 @@ pub struct SearchContentInput {
 
     /// Number of context lines around matches (default: 2)
     pub context_lines: Option<u32>,
+    /// Opaque continuation cursor from a previous search page.
+    pub cursor: Option<String>,
+
+    /// Number of matches to skip when starting without a cursor.
+    pub offset: Option<usize>,
 }
 
 #[allow(dead_code)]
@@ -2074,6 +2079,10 @@ pub struct SearchContentOutput {
     /// matches are verified against the files whatever the index says.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_index: Option<crate::application::dto::TextIndexReport>,
+
+    /// Cursor for the next page, absent when the result is exhausted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// Input for list_files tool

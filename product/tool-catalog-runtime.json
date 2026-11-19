@@ -8836,7 +8836,7 @@
         "requires_graph": false,
         "requires_persistence": false,
         "stability": "stable",
-        "tool_version": "0.103.1"
+        "tool_version": "0.107.0"
       }
     },
     "annotations": {
@@ -8864,6 +8864,13 @@
             "null"
           ]
         },
+        "cursor": {
+          "description": "Opaque continuation cursor from a previous search page.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "file_glob": {
           "description": "Glob pattern to filter files (e.g., \"*.rs\")",
           "type": [
@@ -8873,6 +8880,14 @@
         },
         "max_results": {
           "description": "Maximum number of results to return (default: 50)",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "offset": {
+          "description": "Number of matches to skip when starting without a cursor.",
           "minimum": 0,
           "type": [
             "integer",

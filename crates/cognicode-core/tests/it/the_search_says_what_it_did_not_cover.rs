@@ -67,6 +67,8 @@ fn search_input(max_results: usize) -> SearchContentInput {
         case_insensitive: Some(false),
         max_results: Some(max_results),
         context_lines: Some(0),
+        cursor: None,
+        offset: None,
     }
 }
 
@@ -107,6 +109,129 @@ async fn a_search_that_reaches_its_limit_does_not_say_it_covered_the_tree() {
 ///
 /// The fix must not turn every answer into a partial one: a search that
 /// read the whole tree and found what it was looking for covers it.
+#[tokio::test]
+async fn paginated_content_search_concatenates_to_the_unpaginated_order() {
+    let (_tmp, root) = workspace(5);
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+    let all = handle_search_content(&ctx, search_input(50))
+        .await
+        .expect("full search");
+    let first = handle_search_content(&ctx, search_input(2))
+        .await
+        .expect("first page");
+    let first_json = serde_json::to_value(&first).expect("serialize page");
+    let cursor = first_json
+        .get("next_cursor")
+        .and_then(serde_json::Value::as_str)
+        .expect("a truncated page publishes a continuation cursor");
+    let second_input = serde_json::from_value(serde_json::json!({
+        "pattern": MARKER, "regex": false, "max_results": 2, "context_lines": 0,
+        "cursor": cursor
+    }))
+    .expect("continuation input");
+    let second = handle_search_content(&ctx, second_input)
+        .await
+        .expect("second page");
+    let third_json = serde_json::to_value(&second).expect("serialize second page");
+    let third_cursor = third_json
+        .get("next_cursor")
+        .and_then(serde_json::Value::as_str)
+        .expect("another page remains");
+    let third_input = serde_json::from_value(serde_json::json!({
+        "pattern": MARKER, "regex": false, "max_results": 2, "context_lines": 0,
+        "cursor": third_cursor
+    }))
+    .expect("third page input");
+    let third = handle_search_content(&ctx, third_input)
+        .await
+        .expect("third page");
+    assert!(third.next_cursor.is_none(), "last page has no continuation");
+    let mut pages = first.matches;
+    pages.extend(second.matches);
+    pages.extend(third.matches);
+    assert_eq!(
+        serde_json::to_value(pages).expect("serialize paginated matches"),
+        serde_json::to_value(all.matches).expect("serialize full matches")
+    );
+}
+
+#[tokio::test]
+async fn continuation_is_refused_after_the_search_tree_changes() {
+    let (_tmp, root) = workspace(5);
+    let ctx = HandlerContext::builder()
+        .with_working_dir(root.clone())
+        .build();
+    let first = handle_search_content(&ctx, search_input(2))
+        .await
+        .expect("first page");
+    let cursor = serde_json::to_value(&first).expect("serialize page")["next_cursor"]
+        .as_str()
+        .expect("continuation cursor")
+        .to_owned();
+    std::fs::write(root.join("src/new.rs"), "pub fn beta() {}\n").expect("mutate tree");
+    let continuation = serde_json::from_value(serde_json::json!({
+        "pattern": MARKER, "regex": false, "max_results": 2, "cursor": cursor
+    }))
+    .expect("continuation input");
+    let error = handle_search_content(&ctx, continuation)
+        .await
+        .expect_err("changed tree rejects continuation");
+    assert!(
+        error.to_string().to_lowercase().contains("revision"),
+        "{error}"
+    );
+}
+
+#[tokio::test]
+async fn same_size_edits_and_changed_queries_reject_a_cursor() {
+    let (_tmp, root) = workspace(5);
+    let ctx = HandlerContext::builder()
+        .with_working_dir(root.clone())
+        .build();
+    let first = handle_search_content(&ctx, search_input(2)).await.unwrap();
+    let cursor = first.next_cursor.unwrap();
+    let mut changed_query = search_input(2);
+    changed_query.cursor = Some(cursor.clone());
+    changed_query.pattern = "f0".into();
+    assert!(
+        handle_search_content(&ctx, changed_query)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("definition")
+    );
+    let path = root.join("src/f0.rs");
+    let content = std::fs::read_to_string(&path).unwrap();
+    let edited = content.replace("beta", "zeta");
+    assert_eq!(content.len(), edited.len());
+    std::fs::write(path, edited).unwrap();
+    let mut continuation = search_input(2);
+    continuation.cursor = Some(cursor);
+    assert!(
+        handle_search_content(&ctx, continuation)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("revision")
+    );
+}
+
+#[tokio::test]
+async fn offset_and_zero_limit_have_explicit_boundaries() {
+    let (_tmp, root) = workspace(5);
+    let ctx = HandlerContext::builder().with_working_dir(root).build();
+    let all = handle_search_content(&ctx, search_input(50)).await.unwrap();
+    let mut input = search_input(2);
+    input.offset = Some(2);
+    let page = handle_search_content(&ctx, input).await.unwrap();
+    assert_eq!(
+        serde_json::to_value(page.matches).unwrap(),
+        serde_json::to_value(&all.matches[2..4]).unwrap()
+    );
+    assert!(page.next_cursor.is_some());
+    assert!(handle_search_content(&ctx, search_input(0)).await.is_err());
+}
+
 #[tokio::test]
 async fn a_search_that_fits_in_its_limit_says_it_covered_the_tree() {
     let (_tmp, root) = workspace(3);

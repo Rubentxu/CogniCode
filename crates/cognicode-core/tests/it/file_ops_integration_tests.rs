@@ -89,6 +89,8 @@ mod path_traversal_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(2),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -111,6 +113,8 @@ mod path_traversal_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(2),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -271,6 +275,8 @@ mod gitignore_filtering_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -713,6 +719,8 @@ mod e2e_search_list_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(1),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -750,6 +758,8 @@ mod e2e_search_list_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -857,6 +867,8 @@ mod spec_compliance_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(2),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -892,6 +904,8 @@ mod spec_compliance_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(2),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -1105,6 +1119,8 @@ mod telemetry_tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;
@@ -1471,6 +1487,8 @@ mod spec_compliance_new_tests {
             case_insensitive: Some(false), // case_insensitive flag is separate
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = handle_search_content(&ctx, input).await;

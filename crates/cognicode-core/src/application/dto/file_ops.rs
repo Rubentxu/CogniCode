@@ -187,7 +187,13 @@ pub struct EditFileResult {
 // Search Content
 // ============================================================================
 
-/// Request for searching file content
+/// Request for searching file content.
+///
+/// Each page walks the search tree and normally reads its regular files twice
+/// to check the content revision, in addition to reads needed for matching.
+/// Reads within a search are sequential; concurrent requests can multiply this
+/// cost. Revision checks detect changes between their observations but do not
+/// provide an atomic filesystem snapshot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchContentRequest {
     pub pattern: String,
@@ -203,6 +209,17 @@ pub struct SearchContentRequest {
     pub max_results: Option<usize>,
     #[serde(default)]
     pub context_lines: Option<u32>,
+    /// Opaque continuation returned by a previous page. Reuse it unchanged with
+    /// the same search definition; a changed definition or content-sensitive
+    /// tree revision is rejected. Cannot be combined with `offset`.
+    #[serde(default)]
+    pub cursor: Option<String>,
+    /// Number of matches to skip in deterministic path, line and column order
+    /// when starting without a cursor. Unlike a cursor, an offset does not
+    /// bind the request to an earlier tree revision. Cannot be combined with
+    /// `cursor`.
+    #[serde(default)]
+    pub offset: Option<usize>,
 }
 
 impl SearchContentRequest {
@@ -215,6 +232,8 @@ impl SearchContentRequest {
             case_insensitive: None,
             max_results: None,
             context_lines: None,
+            cursor: None,
+            offset: None,
         }
     }
 }
@@ -236,6 +255,13 @@ pub struct SearchContentResult {
     /// no text index.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text_index: Option<TextIndexReport>,
+    /// Opaque continuation for the next page in path, line and column order.
+    /// It binds the search definition and content-sensitive tree revision;
+    /// continuation is rejected if either changes. Absent if no results remain
+    /// or a reliable continuation cannot be produced; its absence does not by
+    /// itself imply complete tree coverage.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
 }
 
 /// What a text index did for one content search.

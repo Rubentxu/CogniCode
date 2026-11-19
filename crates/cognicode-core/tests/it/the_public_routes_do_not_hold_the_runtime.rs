@@ -101,6 +101,8 @@ fn search_input(pattern: &str) -> SearchContentRequest {
         case_insensitive: Some(false),
         max_results: Some(50),
         context_lines: Some(0),
+        cursor: None,
+        offset: None,
     }
 }
 

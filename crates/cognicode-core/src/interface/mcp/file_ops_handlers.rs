@@ -595,6 +595,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(2),
+                cursor: None,
+                offset: None,
             };
 
             let result = handle_search_content(&ctx, input).await;
@@ -976,6 +978,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(0),
+                cursor: None,
+                offset: None,
             };
 
             let result = handle_search_content(&ctx, input).await;
@@ -1005,6 +1009,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(0),
+                cursor: None,
+                offset: None,
             };
 
             let result = handle_search_content(&ctx, input).await;
@@ -1043,6 +1049,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(0),
+                cursor: None,
+                offset: None,
             };
 
             let result = handle_search_content(&ctx, input).await;
