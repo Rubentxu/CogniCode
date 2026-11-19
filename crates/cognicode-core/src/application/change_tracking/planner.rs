@@ -24,14 +24,11 @@
 //! - A fact unrelated to the previous read-set that changed →
 //!   `Unaffected`.
 //! - A NEW fact — one whose `(subject, predicate)` did not exist in
-//!   the previous snapshot → `Unknown`. The previous execution could
-//!   not have read it; we cannot prove an aggregate read
-//!   (`"all functions"`) is unaffected, so we conservatively mark the
-//!   work as `Unknown`. This is exactly the false-negative case the
-//!   user warned about. A modification (same `(subject, predicate)`,
-//!   different object) is NOT new: unrelated work stays
-//!   `Unaffected`, and the work that read it is `Affected` by the
-//!   rule above.
+//!   the previous snapshot — is `Unknown` unless every dependency carries
+//!   a complete, snapshot-bound detector boundary that excludes its
+//!   predicate/kind. A change the diff already PAIRED with a removal
+//!   remains a modification; the read-set still decides whether it is
+//!   `Affected`.
 //! - A TRUNCATED read-set (recorder hit its bound) → `Unknown` even
 //!   if no relevant change is observed. Lineage is incomplete.
 //!
@@ -46,6 +43,9 @@
 use super::read_scope::ReadScope;
 use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
 use crate::domain::evidence_kernel::semantic_diff::{FactChange, FactDelta, FactSemanticKey};
+use crate::domain::findings::detector_reuse::{
+    DETECTOR_READ_BOUNDARY_SCHEMA, DetectorReadBoundary,
+};
 use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::naming::NamespacedName;
 use crate::domain::readset::ReadSet;
@@ -86,6 +86,9 @@ pub struct ExecutionDependency {
     pub read_set: ReadSet,
     /// Revision-bound read scope; absence must be treated conservatively.
     pub read_scope: Option<ReadScope>,
+    /// Predicate/kind boundary validated against the persisted detector run.
+    /// Its absence means additions cannot be proven irrelevant.
+    pub read_boundary: Option<DetectorReadBoundary>,
 }
 
 /// Structured reason a piece of work was placed in a [`WorkDisposition`].
@@ -117,6 +120,12 @@ pub enum SchedulingReason {
     /// read-only view (e.g. `"all functions"`) is unaffected, so
     /// the work is conservatively `Unknown`.
     ConservativeAddition { added: FactSemanticKey },
+    /// A complete detector boundary proved this addition is outside every
+    /// input projection used by the work's prior executions.
+    BoundaryExcludedAddition {
+        added: FactSemanticKey,
+        excluded_by: Vec<String>,
+    },
     /// The read-set was truncated (recorder hit its bound). Lineage
     /// is incomplete; we cannot prove the work is unaffected.
     ReadSetTruncated,
@@ -183,31 +192,43 @@ pub enum PlannerError {
     SnapshotMismatch,
 }
 
-/// Compute the affected-work plan for a snapshot transition.
-///
-/// `delta` describes the semantic change; `dependencies` carry the
-/// historical read-sets. The function is pure: no I/O, no clock, no
-/// randomness. The output ordering of `decisions` is sorted by
-/// `WorkId` for determinism.
+/// Compute the affected-work plan for a snapshot transition. Callers without
+/// the head facts cannot prove that a new fact falls outside a detector's
+/// projection, so additions retain the conservative `Unknown` verdict.
 pub fn plan_affected_work(
     delta: &FactDelta,
     dependencies: &[ExecutionDependency],
 ) -> AffectedWorkPlan {
-    // Group dependencies by WorkId so the planner reasons over the
-    // union of read-sets per logical work (conservative: if any
-    // historical execution saw a fact, we treat the work as having
-    // seen it).
+    plan_affected_work_with_added_details(
+        delta,
+        dependencies,
+        &std::collections::BTreeMap::new(),
+        &std::collections::BTreeSet::new(),
+    )
+}
+
+/// Compute the plan with provenance details for facts added in the head
+/// revision. The map is deliberately separate from `FactSemanticKey`: detail
+/// is projection metadata, not semantic identity. An added fact without a
+/// head detail or marked as synthetic/untrusted cannot be proven excluded.
+pub(super) fn plan_affected_work_with_added_details(
+    delta: &FactDelta,
+    dependencies: &[ExecutionDependency],
+    added_details: &std::collections::BTreeMap<FactId, Option<String>>,
+    untrusted_additions: &std::collections::BTreeSet<FactId>,
+) -> AffectedWorkPlan {
     let mut by_work: std::collections::BTreeMap<WorkId, Vec<&ExecutionDependency>> =
         std::collections::BTreeMap::new();
     for dep in dependencies {
         by_work.entry(dep.work.clone()).or_default().push(dep);
     }
 
-    let mut decisions: Vec<WorkDecision> = Vec::new();
-    for (work, deps) in by_work {
-        let decision = decide_for_work(&work, delta, &deps);
-        decisions.push(decision);
-    }
+    let decisions = by_work
+        .into_iter()
+        .map(|(work, deps)| {
+            decide_for_work(&work, delta, &deps, added_details, untrusted_additions)
+        })
+        .collect();
 
     AffectedWorkPlan {
         from_snapshot: Some(delta.from),
@@ -220,6 +241,8 @@ fn decide_for_work(
     work: &WorkId,
     delta: &FactDelta,
     deps: &[&ExecutionDependency],
+    added_details: &std::collections::BTreeMap<FactId, Option<String>>,
+    untrusted_additions: &std::collections::BTreeSet<FactId>,
 ) -> WorkDecision {
     // Pre-check: if ANY dependency's read-set was truncated, the work
     // is conservatively `Unknown` regardless of the delta. Lineage
@@ -278,16 +301,9 @@ fn decide_for_work(
         }
     }
 
-    // 4) A NEW `(subject, predicate)` — a fact that did not exist in
-    //    the previous snapshot — is always `Unknown`: the previous
-    //    execution could not have read what did not exist. A change
-    //    the diff already PAIRED with a removal (same subject and
-    //    predicate, different object) is NOT new: it is a
-    //    modification, rule 2 already made the work that read it
-    //    `Affected`, and the contract (module header) promises
-    //    `Unaffected` for work that did not read it. The disposition
-    //    can only climb from `Unaffected` up to `Unknown` here —
-    //    never down.
+    // 4) A NEW fact not paired with a removal is Unknown unless every
+    //    execution boundary proves the fact outside its projection. The
+    //    detail comes from the head revision, never from semantic identity.
     let changed_sp: std::collections::HashSet<(u64, String)> = delta
         .removed
         .iter()
@@ -310,16 +326,45 @@ fn decide_for_work(
         .collect();
     if !new_facts.is_empty() {
         for added in &new_facts {
-            reasons.push(SchedulingReason::ConservativeAddition {
-                added: added.semantic_key.clone(),
-            });
+            let excluded_by: Option<Vec<String>> = (!untrusted_additions.contains(&added.fact_id))
+                .then(|| added_details.get(&added.fact_id))
+                .flatten()
+                .and_then(|detail| {
+                    deps.iter()
+                        .map(|dependency| {
+                            dependency.read_boundary.as_ref().and_then(|boundary| {
+                                if dependency.read_scope.as_ref().is_some_and(|scope| {
+                                    !scope.is_supported()
+                                        || !scope.is_exact()
+                                        || scope.breadth
+                                            != super::read_scope::ReadBreadth::Pointwise
+                                }) {
+                                    return None;
+                                }
+                                boundary_excludes_addition(boundary, delta.from, added, detail)
+                            })
+                        })
+                        .collect::<Option<Vec<String>>>()
+                        .map(|mut detector_ids| {
+                            detector_ids.sort();
+                            detector_ids.dedup();
+                            detector_ids
+                        })
+                });
+            if let Some(excluded_by) = excluded_by {
+                reasons.push(SchedulingReason::BoundaryExcludedAddition {
+                    added: added.semantic_key.clone(),
+                    excluded_by,
+                });
+            } else {
+                reasons.push(SchedulingReason::ConservativeAddition {
+                    added: added.semantic_key.clone(),
+                });
+                if disposition == WorkDisposition::Unaffected {
+                    disposition = WorkDisposition::Unknown;
+                }
+            }
         }
-        // Conservative promotion: Unknown beats Unaffected; Affected
-        // beats Unknown.
-        disposition = match disposition {
-            WorkDisposition::Unaffected => WorkDisposition::Unknown,
-            WorkDisposition::Unknown | WorkDisposition::Affected => disposition,
-        };
     }
 
     WorkDecision {
@@ -327,6 +372,35 @@ fn decide_for_work(
         disposition,
         reasons,
     }
+}
+
+/// Returns the detector id only when a trusted boundary excludes this added
+/// fact. Missing details are not evidence when the predicate is in scope.
+fn boundary_excludes_addition(
+    boundary: &DetectorReadBoundary,
+    base: SnapshotId,
+    added: &FactChange,
+    detail: &Option<String>,
+) -> Option<String> {
+    if boundary.schema != DETECTOR_READ_BOUNDARY_SCHEMA
+        || !boundary.complete
+        || boundary.snapshot != base
+        || boundary.detector_id != boundary.identity.detector_id
+        || boundary.predicates.is_empty()
+        || boundary.details.is_empty()
+    {
+        return None;
+    }
+
+    let predicate = added.semantic_key.predicate.as_str();
+    let excluded = if !boundary.predicates.contains(predicate) {
+        true
+    } else {
+        detail
+            .as_deref()
+            .is_some_and(|detail| !boundary.details.contains(detail))
+    };
+    excluded.then(|| boundary.detector_id.as_str().to_string())
 }
 
 /// Pair up removed/added facts with matching `(subject, predicate)` to
@@ -459,6 +533,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -497,6 +572,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -530,6 +606,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[999]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -562,6 +639,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -602,6 +680,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rs,
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions.len(), 1);
@@ -629,6 +708,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unknown);
@@ -663,12 +743,14 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.b"),
             execution: ExecutionId(2),
             read_set: rec_with(&[11]),
             read_scope: None,
+            read_boundary: None,
         };
 
         let p1 = plan_affected_work(&d1, &[dep_a.clone(), dep_b.clone()]);
@@ -703,6 +785,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10, 99]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unaffected);
@@ -751,6 +834,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[1, 2, 3, 4]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(
@@ -786,12 +870,14 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[999]),
             read_scope: None,
+            read_boundary: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.suite"),
             execution: ExecutionId(2),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep_a, dep_b]);
         assert_eq!(plan.decisions.len(), 1);
@@ -827,6 +913,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         // removed fact 10 was read → Affected. Added fact 50 would
@@ -897,6 +984,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10, 7_777]),
             read_scope: None,
+            read_boundary: None,
         };
         let plan = plan_affected_work(&delta, &[dep]);
         assert_eq!(plan.decisions[0].disposition, WorkDisposition::Unaffected);
@@ -928,12 +1016,14 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(&[10]),
             read_scope: None,
+            read_boundary: None,
         };
         let dep_b = ExecutionDependency {
             work: make_work("ci.b"),
             execution: ExecutionId(2),
             read_set: rec_with(&[11]),
             read_scope: None,
+            read_boundary: None,
         };
 
         let p1 = plan_affected_work(&d1, &[dep_a.clone(), dep_b.clone()]);
@@ -985,6 +1075,7 @@ mod tests {
                 execution: ExecutionId(1),
                 read_set: rec_with(read_facts),
                 read_scope: None,
+                read_boundary: None,
             };
             let plan = plan_affected_work(&delta, &[dep]);
             assert_ne!(

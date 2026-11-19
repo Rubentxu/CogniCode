@@ -114,6 +114,7 @@ pub enum SchedulingReasonKind {
     ReadFactChanged,
     UnrelatedChange,
     ConservativeAddition,
+    BoundaryExcludedAddition,
     ReadSetTruncated,
     UnknownDependency,
 }
@@ -126,6 +127,7 @@ impl SchedulingReasonKind {
             ReadFactChanged { .. } => Self::ReadFactChanged,
             UnrelatedChange { .. } => Self::UnrelatedChange,
             ConservativeAddition { .. } => Self::ConservativeAddition,
+            BoundaryExcludedAddition { .. } => Self::BoundaryExcludedAddition,
             ReadSetTruncated => Self::ReadSetTruncated,
             UnknownDependency => Self::UnknownDependency,
         }
@@ -137,6 +139,7 @@ impl SchedulingReasonKind {
             Self::ReadFactChanged => "ReadFactChanged",
             Self::UnrelatedChange => "UnrelatedChange",
             Self::ConservativeAddition => "ConservativeAddition",
+            Self::BoundaryExcludedAddition => "BoundaryExcludedAddition",
             Self::ReadSetTruncated => "ReadSetTruncated",
             Self::UnknownDependency => "UnknownDependency",
         }
@@ -453,6 +456,7 @@ mod tests {
             execution: ExecutionId(1),
             read_set: rec_with(read_facts),
             read_scope: None,
+            read_boundary: None,
         }
     }
 

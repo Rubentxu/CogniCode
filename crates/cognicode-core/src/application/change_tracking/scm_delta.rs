@@ -32,7 +32,9 @@ use crate::domain::evidence_kernel::semantic_diff::{
 };
 use crate::domain::scm::{ChangeKind, ChangeSet, PathKey, SourceInventory, SourceRevision};
 
-use super::planner::{AffectedWorkPlan, ExecutionDependency, plan_affected_work};
+use super::planner::{
+    AffectedWorkPlan, ExecutionDependency, plan_affected_work_with_added_details,
+};
 
 /// The predicate of a bridge evidence fact: an SCM-level assertion
 /// about one path whose change the triple diff cannot express.
@@ -165,11 +167,31 @@ pub fn plan_between(
                 .map(|c| c.path().clone()),
         )
         .collect();
+    let mut escalated_additions = BTreeSet::new();
     for path in escalated {
-        scm.delta.added.push(evidence_change(&path));
+        let evidence = evidence_change(&path);
+        escalated_additions.insert(evidence.fact_id);
+        scm.delta.added.push(evidence);
     }
     sort_added(&mut scm.delta.added);
-    Ok(plan_affected_work(&scm.delta, dependencies))
+    let head_by_id: BTreeMap<FactId, &Fact> =
+        head.facts.iter().map(|fact| (fact.id, fact)).collect();
+    let added_details: BTreeMap<FactId, Option<String>> = scm
+        .delta
+        .added
+        .iter()
+        .filter_map(|change| {
+            head_by_id
+                .get(&change.fact_id)
+                .map(|fact| (change.fact_id, fact.provenance.detail.clone()))
+        })
+        .collect();
+    Ok(plan_affected_work_with_added_details(
+        &scm.delta,
+        dependencies,
+        &added_details,
+        &escalated_additions,
+    ))
 }
 
 /// One evidence fact as a delta addition: a new assertion the previous
