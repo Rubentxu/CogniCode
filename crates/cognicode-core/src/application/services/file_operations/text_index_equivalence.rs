@@ -371,13 +371,38 @@ fn a_search_that_filters_files_does_not_forget_the_ones_it_did_not_visit() {
 fn the_result_limit_is_the_same_with_and_without_the_index() {
     let dir = tree();
     let pair = Pair::over(dir.path(), eager());
-    for limit in [0, 1, 2, 7] {
+    for limit in [1, 2, 7] {
         let mut query = request("needle", false, false);
         query.max_results = Some(limit);
         for _ in 0..3 {
             pair.same(&query);
         }
     }
+}
+
+/// Pagination is the contract: `max_results = 0` is a typed refusal, not an
+/// unbounded read (76432bff). The equivalence still holds on the refusal —
+/// both services answer the same way whether the index exists or not — so a
+/// zero limit must not smuggle a different answer through the indexed path.
+#[test]
+fn a_zero_result_limit_is_refused_the_same_way_with_and_without_the_index() {
+    let dir = tree();
+    let pair = Pair::over(dir.path(), eager());
+    let mut query = request("needle", false, false);
+    query.max_results = Some(0);
+    let plain = pair
+        .plain
+        .search_content(query.clone())
+        .expect_err("zero is not a page size");
+    let indexed = pair
+        .indexed
+        .search_content(query)
+        .expect_err("zero is not a page size with the index either");
+    assert_eq!(plain.to_string(), indexed.to_string());
+    assert!(
+        plain.to_string().contains("max_results"),
+        "the refusal names the parameter: {plain}"
+    );
 }
 
 #[test]
