@@ -102,7 +102,7 @@ impl ScopedRead {
 }
 
 /// How wide a query read.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ReadBreadth {
     /// The query read exactly the facts it names: a new fact elsewhere
