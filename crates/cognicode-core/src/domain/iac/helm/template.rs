@@ -84,6 +84,9 @@ pub struct TemplateModel {
     /// A helper file (`_helpers.tpl`, `NOTES.txt`): it defines text, it is not
     /// rendered into a manifest by itself.
     pub is_helper: bool,
+    /// Whether every template action and comment in the source was closed.
+    #[serde(default)]
+    pub analysis_complete: bool,
 }
 
 impl TemplateModel {
@@ -95,8 +98,11 @@ impl TemplateModel {
             value_refs: Vec::new(),
             constructs: BTreeSet::new(),
             is_helper: is_helper_path(path),
+            analysis_complete: true,
         };
-        for action in actions(source) {
+        let (actions, complete) = actions(source);
+        model.analysis_complete = complete;
+        for action in actions {
             model.absorb(&action);
         }
         model
@@ -182,14 +188,16 @@ struct Action {
 }
 
 /// The non-comment `{{ ... }}` actions of `source`, with trim markers removed.
-fn actions(source: &str) -> Vec<Action> {
+fn actions(source: &str) -> (Vec<Action>, bool) {
     let mut found = Vec::new();
+    let mut complete = true;
     let mut rest = source;
     let mut line = 1u32;
     while let Some(open) = rest.find("{{") {
         line += newlines(&rest[..open]);
         let after = &rest[open + 2..];
-        let (end, consumed) = action_end(after);
+        let (end, consumed, closed) = action_end(after);
+        complete &= closed;
         let raw = &after[..end];
         let body = raw
             .trim_start_matches('-')
@@ -201,8 +209,11 @@ fn actions(source: &str) -> Vec<Action> {
         }
         line += newlines(&after[..consumed.min(after.len())]);
         rest = &after[consumed.min(after.len())..];
+        if !closed {
+            break;
+        }
     }
-    found
+    (found, complete)
 }
 
 fn newlines(text: &str) -> u32 {
@@ -212,13 +223,17 @@ fn newlines(text: &str) -> u32 {
 /// Index of the closing `}}` (ignoring braces inside string literals) and the
 /// number of bytes consumed including it. An unterminated action consumes the
 /// rest of the text.
-fn action_end(text: &str) -> (usize, usize) {
+fn action_end(text: &str) -> (usize, usize, bool) {
     if text.trim_start_matches('-').trim_start().starts_with("/*") {
-        return text.find("*/").map_or((text.len(), text.len()), |idx| {
-            let tail = &text[idx + 2..];
-            tail.find("}}")
-                .map_or((text.len(), text.len()), |c| (idx + 2 + c, idx + 2 + c + 2))
-        });
+        return text
+            .find("*/")
+            .map_or((text.len(), text.len(), false), |idx| {
+                let tail = &text[idx + 2..];
+                tail.find("}}")
+                    .map_or((text.len(), text.len(), false), |c| {
+                        (idx + 2 + c, idx + 2 + c + 2, true)
+                    })
+            });
     }
     let mut quote: Option<char> = None;
     let mut escaped = false;
@@ -238,12 +253,12 @@ fn action_end(text: &str) -> (usize, usize) {
                 if matches!(ch, '"' | '`' | '\'') {
                     quote = Some(ch);
                 } else if ch == '}' && bytes.get(pos + 1).is_some_and(|&(_, n)| n == '}') {
-                    return (idx, idx + 2);
+                    return (idx, idx + 2, true);
                 }
             }
         }
     }
-    (text.len(), text.len())
+    (text.len(), text.len(), false)
 }
 
 /// Whitespace-separated words with parentheses and pipes split off and string
@@ -432,6 +447,23 @@ mod tests {
         assert!(!is_manifest_template("templates/NOTES.txt"));
         assert!(is_manifest_template("templates/deployment.yaml"));
         assert!(!is_manifest_template("values.yaml"));
+    }
+
+    #[test]
+    fn unterminated_actions_make_static_analysis_incomplete() {
+        let model = TemplateModel::analyze("templates/a.yaml", "name: {{ .Values.name");
+        assert!(!model.analysis_complete);
+        let complete = TemplateModel::analyze("templates/a.yaml", "name: {{ .Values.name }}");
+        assert!(complete.analysis_complete);
+    }
+
+    #[test]
+    fn legacy_serialized_template_models_default_analysis_to_incomplete() {
+        let model: TemplateModel = serde_json::from_str(
+            r#"{"path":"templates/a.yaml","defines":[],"value_refs":[],"constructs":[],"is_helper":false}"#,
+        )
+        .expect("legacy model");
+        assert!(!model.analysis_complete);
     }
 
     #[test]

@@ -100,6 +100,23 @@ fn a_rendered_chart_with_nothing_else_wrong_reaches_pass() {
     assert_eq!(result.full_verdict, Verdict::Pass);
 }
 
+#[test]
+fn helm_values_edit_produces_findings_in_both_modes() {
+    for class in EditClass::ALL {
+        let result = helm_scenario(class, Projection::Rendered);
+
+        assert!(
+            result.incremental_part_findings > 0,
+            "{class:?} incremental findings: {result:?}"
+        );
+        assert!(
+            result.part_findings > 0,
+            "{class:?} full rebuild findings: {result:?}"
+        );
+        assert!(result.divergences.is_empty(), "{:?}", result.divergences);
+    }
+}
+
 /// With nothing rendering the chart, its templates are gaps and the same
 /// edit is never `Pass`, in either mode. The cause is the render, not a
 /// syntax error.
@@ -129,10 +146,10 @@ fn an_unrendered_chart_is_never_pass_and_says_why() {
     }
 }
 
-/// A template with an unclosed action is not rendered by anything, so the
-/// edit is never `Pass` even when other templates are rendered.
+/// A closed template with a required but unset value is not rendered by the
+/// engine double, so the edit is never `Pass` in either mode.
 #[test]
-fn a_malformed_template_is_never_pass_even_when_the_engine_is_present() {
+fn a_required_missing_template_is_never_pass_even_when_the_engine_is_present() {
     let result = helm_scenario(EditClass::Malformed, Projection::Rendered);
 
     assert!(result.divergences.is_empty(), "{:?}", result.divergences);
@@ -142,7 +159,7 @@ fn a_malformed_template_is_never_pass_even_when_the_engine_is_present() {
         result
             .head_gaps
             .iter()
-            .any(|gap| gap.contains("unclosed action")),
+            .any(|gap| gap.contains("requires unset `.Values.requiredValue`")),
         "{:?}",
         result.head_gaps
     );
@@ -278,6 +295,25 @@ fn an_incremental_side_that_drops_a_detector_result_is_caught() {
             certification.render()
         );
     }
+}
+
+#[test]
+fn a_dropped_helm_value_finding_is_caught_by_the_equivalence_oracle() {
+    let corpus = corpus_root();
+    let scenario = scenarios(&corpus)
+        .into_iter()
+        .find(|scenario| scenario.part == "helm" && scenario.class == EditClass::Simple)
+        .expect("the Helm simple edit exists");
+    let result = evaluate_with_fault(
+        &corpus,
+        &scenario,
+        Projection::Rendered,
+        Fault::DropDetectorFindings,
+    );
+    assert!(
+        !certify(vec![result.clone()]).certified,
+        "a dropped Helm finding went unnoticed: {result:?}"
+    );
 }
 
 #[test]
