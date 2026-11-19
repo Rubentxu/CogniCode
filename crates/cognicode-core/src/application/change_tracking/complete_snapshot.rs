@@ -499,7 +499,10 @@ fn resolve_reuse(
     }
     let current = current.expect("checked by the IdentityMissing issue above");
 
-    match reuse_decision(record, current, Some(req.delta)) {
+    // The planner has already classified this transition as Unaffected using
+    // the recorded read boundary. Reapplying the raw delta here would forget
+    // boundary-excluded additions and invalidate otherwise safe reuse.
+    match reuse_decision(record, current, None) {
         crate::domain::findings::detector_reuse::ReuseDecision::Reusable => (
             Resolution::Reused {
                 findings: rebind_candidate(record, req.candidate_snapshot),
