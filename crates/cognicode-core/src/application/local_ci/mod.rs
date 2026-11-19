@@ -452,6 +452,7 @@ mod tests {
             work,
             execution: ExecutionId(1),
             read_set: rec_with(read_facts),
+            read_scope: None,
         }
     }
 
