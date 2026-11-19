@@ -94,6 +94,8 @@ const TYPE_DEFINITION_ID: &str = "structure.type_definition";
 
 const UNPROTECTED_BUCKET_SUBJECT: &str = "infrastructure.s3_bucket";
 const UNPROTECTED_BUCKET_ID: &str = "infrastructure.unprotected_s3_bucket";
+const UNUSED_HELM_VALUE_SUBJECT: &str = "configuration.unused_helm_value";
+const UNUSED_HELM_VALUE_ID: &str = "configuration.unused_helm_value";
 
 /// A detector that reads revision facts and records what it read.
 ///
@@ -110,14 +112,17 @@ pub enum ProductionDetector {
     /// module references. Reads Terraform declaration and reference facts,
     /// not definitions of code.
     UnprotectedBucket,
+    /// Declared chart values no template references in a complete static chart.
+    UnusedHelmValue,
 }
 
 impl ProductionDetector {
     /// Every detector that writes a read-set, in the order they are recorded.
-    pub const ALL: [Self; 3] = [
+    pub const ALL: [Self; 4] = [
         Self::FunctionDefinition,
         Self::TypeDefinition,
         Self::UnprotectedBucket,
+        Self::UnusedHelmValue,
     ];
 
     fn ir(self) -> Result<DetectorIr, String> {
@@ -125,6 +130,7 @@ impl ProductionDetector {
             Self::FunctionDefinition => function_definition_detector_ir(),
             Self::TypeDefinition => type_definition_detector_ir(),
             Self::UnprotectedBucket => unprotected_bucket_detector_ir(),
+            Self::UnusedHelmValue => unused_helm_value_detector_ir(),
         }
     }
 
@@ -133,6 +139,7 @@ impl ProductionDetector {
             Self::FunctionDefinition => "cgh-044-1.0.0",
             Self::TypeDefinition => "1.0.0",
             Self::UnprotectedBucket => "1.0.0",
+            Self::UnusedHelmValue => "1.0.0",
         }
     }
 
@@ -141,6 +148,7 @@ impl ProductionDetector {
             Self::FunctionDefinition => SUBJECT_FUNCTION_DEFINITION,
             Self::TypeDefinition => TYPE_DEFINITION_SUBJECT,
             Self::UnprotectedBucket => UNPROTECTED_BUCKET_SUBJECT,
+            Self::UnusedHelmValue => UNUSED_HELM_VALUE_SUBJECT,
         }
     }
 
@@ -149,6 +157,7 @@ impl ProductionDetector {
             Self::FunctionDefinition => "function",
             Self::TypeDefinition => "type",
             Self::UnprotectedBucket => "S3 bucket",
+            Self::UnusedHelmValue => "Helm value",
         }
     }
 
@@ -158,7 +167,7 @@ impl ProductionDetector {
             Self::FunctionDefinition => detail == Some(FUNCTION_KIND),
             Self::TypeDefinition => detail.is_some_and(|kind| TYPE_KINDS.contains(&kind)),
             // Not a definition of code: its projection reads Terraform facts.
-            Self::UnprotectedBucket => false,
+            Self::UnprotectedBucket | Self::UnusedHelmValue => false,
         }
     }
 }
@@ -195,6 +204,25 @@ fn unprotected_bucket_detector_ir() -> Result<DetectorIr, String> {
             },
             DetectorStep::Produce {
                 kind: FindingKind::new(UNPROTECTED_BUCKET_ID).map_err(|e| e.to_string())?,
+            },
+        ],
+    })
+}
+
+fn unused_helm_value_detector_ir() -> Result<DetectorIr, String> {
+    Ok(DetectorIr {
+        id: DetectorId::new(UNUSED_HELM_VALUE_ID).map_err(|error| error.to_string())?,
+        name: UNUSED_HELM_VALUE_ID.to_string(),
+        policy: Default::default(),
+        requires: [AnalysisCapability::AstPattern].into_iter().collect(),
+        authority: DetectorAuthority::Candidate,
+        steps: vec![
+            DetectorStep::Match {
+                subject: SubjectPattern::new(UNUSED_HELM_VALUE_SUBJECT)
+                    .map_err(|error| error.to_string())?,
+            },
+            DetectorStep::Produce {
+                kind: FindingKind::new(UNUSED_HELM_VALUE_ID).map_err(|error| error.to_string())?,
             },
         ],
     })
@@ -299,7 +327,94 @@ fn projection(
             Ok(Projection { reads, observed })
         }
         ProductionDetector::UnprotectedBucket => bucket_projection(detector, produced),
+        ProductionDetector::UnusedHelmValue => helm_value_projection(detector, produced),
     }
+}
+
+fn helm_value_projection(
+    detector: ProductionDetector,
+    produced: &ProducedRevision,
+) -> Result<Projection, DetectorRunError> {
+    const CHART_COMPLETE: &str = "helm:analysis_complete";
+    const TEMPLATE_COMPLETE: &str = "helm:template_analysis_complete";
+    const DECLARED: &str = "helm:declared_value";
+    const VALUE_REF: &str = "helm:template_value_ref";
+
+    let subject = SubjectPattern::new(detector.subject())
+        .map_err(|error| DetectorRunError::Admission(error.to_string()))?;
+    let paths: BTreeMap<FactId, String> = produced
+        .facts
+        .path_facts
+        .iter()
+        .flat_map(|(path, ids)| ids.iter().map(move |id| (*id, path.as_str().to_string())))
+        .collect();
+    let mut charts: BTreeMap<_, Vec<&Fact>> = BTreeMap::new();
+    let mut observed = BTreeSet::new();
+    for fact in &produced.facts.facts {
+        if matches!(
+            fact.predicate.as_str(),
+            CHART_COMPLETE | TEMPLATE_COMPLETE | DECLARED | VALUE_REF
+        ) {
+            observed.insert(fact.id);
+            charts.entry(fact.subject).or_default().push(fact);
+        }
+    }
+
+    let mut reads = Vec::new();
+    for (chart_subject, facts) in charts {
+        let chart_complete = facts.iter().any(|fact| {
+            fact.predicate.as_str() == CHART_COMPLETE
+                && matches!(&fact.object, FactValue::Text(value) if value == "true")
+        });
+        let templates_complete = facts
+            .iter()
+            .filter(|fact| fact.predicate.as_str() == TEMPLATE_COMPLETE)
+            .all(|fact| matches!(&fact.object, FactValue::Text(value) if value.ends_with(":true")));
+        if !chart_complete || !templates_complete {
+            continue;
+        }
+        let references: BTreeSet<&str> = facts
+            .iter()
+            .filter(|fact| fact.predicate.as_str() == VALUE_REF)
+            .filter_map(|fact| match &fact.object {
+                FactValue::Text(value) => value.split_once('@').map(|(name, _)| name),
+                _ => None,
+            })
+            .collect();
+        for declaration in facts
+            .iter()
+            .filter(|fact| fact.predicate.as_str() == DECLARED)
+        {
+            let FactValue::Text(value) = &declaration.object else {
+                continue;
+            };
+            let used = references.iter().any(|reference| {
+                *reference == value
+                    || reference.starts_with(&format!("{value}."))
+                    || value.starts_with(&format!("{reference}."))
+            });
+            if used {
+                continue;
+            }
+            let path = paths
+                .get(&declaration.id)
+                .cloned()
+                .unwrap_or_else(|| "Chart.yaml".to_string());
+            reads.push(DefinitionRead {
+                path,
+                fqn: format!("{}:{value}", chart_subject.0),
+                line: 0,
+                fact: declaration.id,
+                construct: AstConstruct {
+                    subject: subject.clone(),
+                    line: 0,
+                    detail: format!("declared Helm value `.Values.{value}` is unused"),
+                    grounding: Some(GroundingRef::entity(declaration.subject, declaration.id)),
+                },
+            });
+        }
+    }
+    Ok(Projection { reads, observed })
 }
 
 /// The unprotected buckets of the revision's Terraform facts, each grounded
@@ -669,7 +784,7 @@ fn projection_boundary(
     let details: BTreeSet<String> = match detector {
         ProductionDetector::FunctionDefinition => &[FUNCTION_KIND][..],
         ProductionDetector::TypeDefinition => &TYPE_KINDS[..],
-        ProductionDetector::UnprotectedBucket => return None,
+        ProductionDetector::UnprotectedBucket | ProductionDetector::UnusedHelmValue => return None,
     }
     .iter()
     .map(|detail| (*detail).to_string())
@@ -834,6 +949,7 @@ mod tests {
 
     const FUNCTIONS: ProductionDetector = ProductionDetector::FunctionDefinition;
     const TYPES: ProductionDetector = ProductionDetector::TypeDefinition;
+    const HELM_VALUES: ProductionDetector = ProductionDetector::UnusedHelmValue;
 
     fn fresh_run(
         facts: &ProducedRevision,
@@ -919,6 +1035,136 @@ mod tests {
 
     fn workspace() -> WorkspaceId {
         WorkspaceId::try_new("ws").expect("workspace")
+    }
+
+    fn helm_fake(template: &[u8]) -> FakeSource {
+        FakeSource::new(
+            "fake",
+            ProviderCapabilities {
+                ancestor_queries: true,
+                ..ProviderCapabilities::NONE
+            },
+        )
+        .with_revision(
+            "main",
+            &[],
+            &[
+                (
+                    "Chart.yaml",
+                    b"apiVersion: v2\nname: demo\nversion: 1.0.0\n",
+                ),
+                ("values.yaml", b"used: true\nunused: true\n"),
+                ("templates/deployment.yaml", template),
+            ],
+        )
+    }
+
+    fn helm_parent_with_subchart_fake() -> FakeSource {
+        FakeSource::new(
+            "fake",
+            ProviderCapabilities {
+                ancestor_queries: true,
+                ..ProviderCapabilities::NONE
+            },
+        )
+        .with_revision(
+            "main",
+            &[],
+            &[
+                (
+                    "Chart.yaml",
+                    b"apiVersion: v2\nname: parent\nversion: 1.0.0\ndependencies:\n  - name: db\n    version: 1.0.0\n    repository: file://charts/db\n",
+                ),
+                ("values.yaml", b"db:\n  password: parent-override\n"),
+                (
+                    "charts/db/Chart.yaml",
+                    b"apiVersion: v2\nname: db\nversion: 1.0.0\n",
+                ),
+                ("charts/db/values.yaml", b"password: child-default\nunusedChild: true\n"),
+                (
+                    "charts/db/templates/secret.yaml",
+                    b"data:\n  password: {{ .Values.password }}\n",
+                ),
+            ],
+        )
+    }
+
+    #[test]
+    fn a_parent_with_subchart_values_abstains_without_disabling_child_analysis() {
+        let fake = helm_parent_with_subchart_fake();
+        let produced = produce(&fake, "main");
+        let marker_value = |path: &str| {
+            let ids = produced
+                .facts
+                .path_facts
+                .get(&crate::domain::scm::PathKey::new(path).expect("path"))
+                .expect("chart marker facts");
+            ids.iter()
+                .filter_map(|id| produced.facts.facts.iter().find(|fact| fact.id == *id))
+                .find(|fact| fact.predicate.as_str() == "helm:analysis_complete")
+                .and_then(|fact| match &fact.object {
+                    FactValue::Text(value) => Some(value.as_str()),
+                    _ => None,
+                })
+                .expect("analysis marker")
+        };
+        assert_eq!(marker_value("Chart.yaml"), "false");
+        assert_eq!(marker_value("charts/db/Chart.yaml"), "true");
+
+        let record = fresh_run_of(HELM_VALUES, &produced).expect("detector run");
+
+        assert_eq!(record.findings.len(), 1, "{:#?}", record.findings);
+        assert_eq!(
+            record.findings[0].output_locations[0].file,
+            "charts/db/values.yaml"
+        );
+    }
+
+    #[test]
+    fn unused_helm_value_finding_reads_every_chart_proof_fact() {
+        let fake = helm_fake(b"{{ .Values.used }}\n");
+        let produced = produce(&fake, "main");
+        let record = fresh_run_of(HELM_VALUES, &produced).expect("detector run");
+        let expected: BTreeSet<FactId> = produced
+            .facts
+            .facts
+            .iter()
+            .filter(|fact| {
+                matches!(
+                    fact.predicate.as_str(),
+                    "helm:analysis_complete"
+                        | "helm:template_analysis_complete"
+                        | "helm:declared_value"
+                        | "helm:template_value_ref"
+                )
+            })
+            .map(|fact| fact.id)
+            .collect();
+
+        assert_eq!(record.findings.len(), 1);
+        assert_eq!(record.observed_facts, expected);
+        assert!(!record.observed_truncated);
+        let path = record.findings[0].output_locations[0].file.as_str();
+        assert_eq!(path, "values.yaml");
+    }
+
+    #[test]
+    fn unused_helm_value_detector_abstains_on_dynamic_or_incomplete_templates() {
+        for template in [
+            &b"{{ include \\\"helper\\\" . }}"[..],
+            &b"{{ tpl .Values.source . }}"[..],
+            &b"{{ toYaml .Values }}"[..],
+            &b"{{ .Values.unterminated"[..],
+        ] {
+            let fake = helm_fake(template);
+            let produced = produce(&fake, "main");
+            let record = fresh_run_of(HELM_VALUES, &produced).expect("detector run");
+            assert!(record.findings.is_empty(), "{template:?}");
+            assert!(produced.coverage.gaps.iter().any(|gap| matches!(
+                gap.reason,
+                super::super::revision_facts::GapReason::TemplateNotRendered { .. }
+            )));
+        }
     }
 
     fn fake() -> FakeSource {

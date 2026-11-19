@@ -142,12 +142,36 @@ impl ChartRenderCheck for StrictTemplateRender {
         }
         for (path, bytes) in &chart.files {
             let text = String::from_utf8_lossy(bytes);
-            if path.starts_with("templates/")
-                && text.matches("{{").count() != text.matches("}}").count()
-            {
-                return ChartRender::NotRendered {
-                    cause: format!("template `{path}` has an unclosed action"),
-                };
+            if path.starts_with("templates/") {
+                if text.matches("{{").count() != text.matches("}}").count() {
+                    return ChartRender::NotRendered {
+                        cause: format!("template `{path}` has an unclosed action"),
+                    };
+                }
+                if text.contains("required") {
+                    let values = chart
+                        .files
+                        .get("values.yaml")
+                        .and_then(|bytes| serde_norway::from_slice::<serde_json::Value>(bytes).ok())
+                        .unwrap_or_else(|| serde_json::json!({}));
+                    let required_path = text
+                        .split(".Values.")
+                        .nth(1)
+                        .and_then(|tail| {
+                            tail.split(|ch: char| {
+                                !(ch.is_ascii_alphanumeric() || ch == '_' || ch == '.')
+                            })
+                            .next()
+                        })
+                        .unwrap_or_default();
+                    if cognicode_core::domain::iac::helm::lookup(&values, required_path).is_none() {
+                        return ChartRender::NotRendered {
+                            cause: format!(
+                                "template `{path}` requires unset `.Values.{required_path}`"
+                            ),
+                        };
+                    }
+                }
             }
         }
         ChartRender::Rendered
@@ -423,6 +447,8 @@ pub struct ScenarioResult {
     /// production detectors see nothing of that part, so agreement on it
     /// proves nothing.
     pub part_findings: usize,
+    /// Findings under the edited part in IncrementalComplete.
+    pub incremental_part_findings: usize,
     /// What disagrees, stated as sentences. Empty when the modes agree.
     pub divergences: Vec<String>,
     /// Where an honest analysis would have refused and did not: a
@@ -689,16 +715,15 @@ pub fn evaluate_produced(
     }
 
     let part_prefix = format!("{}/", scenario.part);
-    let part_findings = full
-        .findings
-        .iter()
-        .filter(|f| {
-            scenario.part == "cross"
-                || f.output_locations
-                    .iter()
-                    .any(|l| l.file.starts_with(&part_prefix))
-        })
-        .count();
+    let is_in_part = |finding: &&ReboundFinding| {
+        scenario.part == "cross"
+            || finding
+                .output_locations
+                .iter()
+                .any(|location| location.file.starts_with(&part_prefix))
+    };
+    let part_findings = full.findings.iter().filter(is_in_part).count();
+    let incremental_part_findings = incremental.findings.iter().filter(is_in_part).count();
     let mut false_passes = Vec::new();
     let no_change = changes.changes().is_empty();
     if scenario.class == EditClass::Malformed
@@ -721,6 +746,7 @@ pub fn evaluate_produced(
         incremental_codes: incremental.reason_codes(),
         full_findings: full.findings.len(),
         part_findings,
+        incremental_part_findings,
         divergences,
         false_passes,
         no_change,

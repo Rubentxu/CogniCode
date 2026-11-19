@@ -198,7 +198,7 @@ fn not_evaluated(isolated_memory: bool) -> Value {
         "ci_cost_per_scenario": "not derivable from analysis time; scripts/measure/scenario_cost.py corpus-gates runs the gate stages per scenario, and the PipelineK lane is not run by it",
         "branch_and_worktree_scenarios": "the pipelines compare two commits in one repository and do not exercise git; scripts/measure/scenario_cost.py worktree times branch and worktree operations",
         "speedup_claims": "no speedup is claimed: the numbers above are per pipeline, taken in a debug build on a shared host",
-        "detection_precision_of_terraform_and_helm": "the production detectors read only function and type definitions, so nothing is detected in these parts",
+        "detection_precision_of_terraform_and_helm": "the benchmark checks mode agreement, not precision against a hand-labelled infrastructure oracle",
     });
     if !isolated_memory {
         reasons["peak_memory_per_pipeline"] = json!(

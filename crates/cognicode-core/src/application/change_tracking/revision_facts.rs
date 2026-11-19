@@ -53,8 +53,9 @@ use crate::application::ingest::independent_syntax::is_independently_well_formed
 use crate::application::revision_snapshots::{
     ExtractionObject, ProducerVersions, RevisionSnapshot,
 };
-use crate::domain::evidence_kernel::fact::Fact;
+use crate::domain::evidence_kernel::fact::{Fact, ProducerKind};
 use crate::domain::evidence_kernel::ids::{FactId, SnapshotId};
+use crate::domain::evidence_kernel::relation::RelationKind;
 use crate::domain::findings::detector_reuse::DetectorReuseIndex;
 use crate::domain::kernel_ids::ExecutionId;
 use crate::domain::naming::NamespacedName;
@@ -83,7 +84,7 @@ use super::scm_delta::{
 /// longer extracted as YAML. v4: a file the grammar cannot read is a grammar
 /// limit when an independent parser accepts it, and the Rust grammar reads
 /// more of the language.
-pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v4";
+pub const FACTS_PRODUCER_VERSION: &str = "cognicode.revision-facts/v5";
 
 /// Paths read per batched content request: bounds peak memory (about
 /// this many files of at most `max_file_bytes` each) while keeping the
@@ -509,8 +510,36 @@ pub fn produce_revision_facts_rendering(
         }
     }
 
-    for (root, template_paths) in &templates {
-        let outcome = match read_chart_files(reader, revision, &inventory, root, limits) {
+    for root in &roots {
+        let chart_subject = helm_chart_subject(root);
+        let template_paths = templates.get(root).cloned().unwrap_or_default();
+        let chart_files = read_chart_files(reader, revision, &inventory, root, limits);
+        match &chart_files {
+            Ok(chart) => {
+                let (static_facts, _complete) = helm_static_facts(chart, snapshot_id);
+                for (path, facts) in static_facts {
+                    per_file.entry(path).or_default().extend(facts);
+                }
+            }
+            Err(_) => {
+                if let Ok(path) = PathKey::new(&chart_path(root, "Chart.yaml")) {
+                    let marker = helm_fact_batch(&path, snapshot_id, |builder| {
+                        add_helm_fact(
+                            builder,
+                            &chart_subject,
+                            "helm:analysis_complete",
+                            "false",
+                            Some("chart inputs unreadable"),
+                        );
+                    });
+                    per_file.entry(path).or_default().extend(marker);
+                }
+            }
+        }
+        if template_paths.is_empty() {
+            continue;
+        }
+        let outcome = match chart_files {
             Ok(chart) => charts.check(&chart),
             Err(cause) => ChartRender::NotRendered { cause },
         };
@@ -617,6 +646,235 @@ fn read_chart_files(
         root: root.to_string(),
         files,
     })
+}
+
+/// Produces deterministic chart facts under the source file that declares them.
+fn helm_static_facts(
+    chart: &ChartFiles,
+    snapshot: SnapshotId,
+) -> (BTreeMap<PathKey, Vec<Fact>>, bool) {
+    use crate::domain::iac::helm::{Construct, TemplateModel};
+    use serde_json::Value;
+
+    let chart_source_path = chart_path(&chart.root, "Chart.yaml");
+    let chart_subject = helm_chart_subject(&chart.root);
+    let mut by_path = BTreeMap::new();
+    let mut complete = true;
+    let chart_yaml = chart
+        .files
+        .get("Chart.yaml")
+        .and_then(|bytes| serde_norway::from_slice::<Value>(bytes).ok());
+    if let Some(document) = chart_yaml {
+        if document.get("name").and_then(Value::as_str).is_none()
+            || document.get("version").and_then(Value::as_str).is_none()
+            || document.get("dependencies").is_some_and(|dependencies| {
+                dependencies
+                    .as_array()
+                    .is_none_or(|dependencies| !dependencies.is_empty())
+            })
+        {
+            complete = false;
+        }
+        let path = PathKey::new(&chart_source_path).expect("inventory chart path is valid");
+        let mut facts = Vec::new();
+        if let Some(name) = document.get("name").and_then(Value::as_str) {
+            facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+                add_helm_fact(
+                    builder,
+                    &chart_subject,
+                    "helm:chart_identity",
+                    name,
+                    Some("name"),
+                )
+            }));
+        }
+        if let Some(version) = document.get("version").and_then(Value::as_str) {
+            facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+                add_helm_fact(
+                    builder,
+                    &chart_subject,
+                    "helm:chart_identity",
+                    version,
+                    Some("version"),
+                )
+            }));
+        }
+        if let Some(dependencies) = document.get("dependencies").and_then(Value::as_array) {
+            for dependency in dependencies {
+                if let Some(name) = dependency.get("name").and_then(Value::as_str) {
+                    facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+                        add_helm_fact(
+                            builder,
+                            &chart_subject,
+                            "helm:chart_dependency",
+                            name,
+                            dependency.get("version").and_then(Value::as_str),
+                        )
+                    }));
+                }
+            }
+        }
+        by_path.insert(path, facts);
+    } else {
+        complete = false;
+    }
+
+    let values_path = chart_path(&chart.root, "values.yaml");
+    if let Some(bytes) = chart.files.get("values.yaml") {
+        match serde_norway::from_slice::<Value>(bytes) {
+            Ok(values) => {
+                let path = PathKey::new(&values_path).expect("inventory values path is valid");
+                let mut facts = Vec::new();
+                let mut declared = Vec::new();
+                flatten_helm_values(&values, "", &mut declared);
+                for key in declared {
+                    facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+                        add_helm_fact(builder, &chart_subject, "helm:declared_value", &key, None)
+                    }));
+                }
+                by_path.entry(path).or_insert_with(Vec::new).extend(facts);
+            }
+            Err(_) => complete = false,
+        }
+    }
+
+    let template_sources: Vec<_> = chart
+        .files
+        .iter()
+        .filter(|(path, _)| path.starts_with("templates/"))
+        .collect();
+    for (relative, bytes) in template_sources {
+        let full_path = chart_path(&chart.root, relative);
+        let Ok(path) = PathKey::new(&full_path) else {
+            complete = false;
+            continue;
+        };
+        let digest = Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let Ok(source) = std::str::from_utf8(bytes) else {
+            complete = false;
+            let object = format!("{relative}@sha256:{digest}:false");
+            let marker = helm_fact_batch(&path, snapshot, |builder| {
+                add_helm_fact(
+                    builder,
+                    &chart_subject,
+                    "helm:template_analysis_complete",
+                    &object,
+                    None,
+                )
+            });
+            by_path.entry(path).or_insert_with(Vec::new).extend(marker);
+            continue;
+        };
+        let model = TemplateModel::analyze(relative, source);
+        let template_complete = model.analysis_complete
+            && !model.constructs.iter().any(|c| {
+                matches!(
+                    c,
+                    Construct::Include(_) | Construct::Tpl | Construct::WholeValues
+                )
+            });
+        if !template_complete {
+            complete = false;
+        }
+        let mut facts = Vec::new();
+        let object = format!("{relative}@sha256:{digest}:{template_complete}");
+        facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+            add_helm_fact(
+                builder,
+                &chart_subject,
+                "helm:template_analysis_complete",
+                &object,
+                None,
+            )
+        }));
+        for reference in model.value_refs {
+            facts.extend(helm_fact_batch(&path, snapshot, |builder| {
+                let object = format!("{}@{}:{}", reference.path, relative, reference.line);
+                add_helm_fact(
+                    builder,
+                    &chart_subject,
+                    "helm:template_value_ref",
+                    &object,
+                    None,
+                )
+            }));
+        }
+        by_path.entry(path).or_insert_with(Vec::new).extend(facts);
+    }
+    if let Ok(path) = PathKey::new(&chart_source_path) {
+        let value = if complete { "true" } else { "false" };
+        let facts = helm_fact_batch(&path, snapshot, |builder| {
+            add_helm_fact(
+                builder,
+                &chart_subject,
+                "helm:analysis_complete",
+                value,
+                None,
+            )
+        });
+        by_path.entry(path).or_insert_with(Vec::new).extend(facts);
+    }
+    (by_path, complete)
+}
+
+fn flatten_helm_values(value: &serde_json::Value, prefix: &str, paths: &mut Vec<String>) {
+    if let Some(map) = value.as_object() {
+        for (key, child) in map {
+            let path = if prefix.is_empty() {
+                key.clone()
+            } else {
+                format!("{prefix}.{key}")
+            };
+            if child.is_object() {
+                flatten_helm_values(child, &path, paths);
+            } else {
+                paths.push(path);
+            }
+        }
+    }
+}
+
+fn helm_chart_subject(root: &str) -> String {
+    format!("helm-chart:{}", if root.is_empty() { "." } else { root })
+}
+
+fn chart_path(root: &str, relative: &str) -> String {
+    if root.is_empty() {
+        relative.to_string()
+    } else {
+        format!("{root}/{relative}")
+    }
+}
+
+fn helm_fact_batch(
+    _path: &PathKey,
+    snapshot: SnapshotId,
+    add: impl FnOnce(&mut FactBatchBuilder),
+) -> Vec<Fact> {
+    let mut builder = FactBatchBuilder::new(snapshot);
+    add(&mut builder);
+    builder.finish_stable()
+}
+
+fn add_helm_fact(
+    builder: &mut FactBatchBuilder,
+    subject: &str,
+    predicate: &str,
+    object: &str,
+    detail: Option<&str>,
+) {
+    builder
+        .add_observation(
+            subject,
+            RelationKind::try_new(predicate).expect("fixed Helm predicate is valid"),
+            object,
+            ProducerKind::DeterministicAnalyzer,
+            detail.map(str::to_string),
+        )
+        .expect("deterministic Helm fact is valid");
 }
 
 /// Parses one file into its facts, with stable subject ids.
@@ -2258,7 +2516,72 @@ unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
     }
 
     #[test]
-    fn go_template_text_is_never_a_syntax_error_and_never_facts() {
+    fn helm_static_facts_are_path_grounded_and_unrendered_gaps_remain() {
+        let fake = chart_revision();
+        let produced = produce_with(&fake, None, &ScriptedRender::refusing("offline"));
+        let chart_facts = produced
+            .facts
+            .path_facts
+            .get(&path("deploy/web/Chart.yaml"))
+            .expect("chart facts");
+        let values_facts = produced
+            .facts
+            .path_facts
+            .get(&path("deploy/web/values.yaml"))
+            .expect("values facts");
+        let deployment_facts = produced
+            .facts
+            .path_facts
+            .get(&path("deploy/web/templates/deployment.yaml"))
+            .expect("template refs");
+        let has = |ids: &[FactId], predicate: &str, object: &str| {
+            ids.iter().filter_map(|id| produced.facts.facts.iter().find(|fact| fact.id == *id))
+                .any(|fact| fact.predicate.as_str() == predicate && matches!(&fact.object, crate::domain::evidence_kernel::fact::FactValue::Text(value) if value.starts_with(object)))
+        };
+        assert!(has(chart_facts, "helm:chart_identity", "web"));
+        assert!(has(values_facts, "helm:declared_value", "replicas"));
+        assert!(has(
+            deployment_facts,
+            "helm:template_value_ref",
+            "replicas@templates/deployment.yaml:"
+        ));
+        assert!(has(chart_facts, "helm:analysis_complete", "true"));
+        assert_eq!(produced.coverage.gaps.len(), 2);
+        assert!(
+            produced
+                .coverage
+                .gaps
+                .iter()
+                .all(|gap| matches!(gap.reason, GapReason::TemplateNotRendered { .. }))
+        );
+    }
+
+    #[test]
+    fn incomplete_helm_template_marks_static_analysis_incomplete() {
+        let fake = provider(&[(
+            "main",
+            &[],
+            &[
+                (
+                    "Chart.yaml",
+                    b"apiVersion: v2\\nname: sample\\nversion: 1.0.0\\n",
+                ),
+                ("values.yaml", b"unused: true\\n"),
+                ("templates/broken.yaml", b"{{ .Values.unfinished"),
+            ],
+        )]);
+        let produced = produce_with(&fake, None, &ScriptedRender::refusing("offline"));
+        let chart_facts = produced
+            .facts
+            .path_facts
+            .get(&path("Chart.yaml"))
+            .expect("chart facts");
+        assert!(chart_facts.iter().filter_map(|id| produced.facts.facts.iter().find(|fact| fact.id == *id))
+            .any(|fact| fact.predicate.as_str() == "helm:analysis_complete" && matches!(&fact.object, crate::domain::evidence_kernel::fact::FactValue::Text(value) if value == "false")));
+    }
+
+    #[test]
+    fn go_template_text_is_never_yaml_and_unrendered_chart_still_has_static_facts() {
         let fake = chart_revision();
 
         let produced = produce(&fake, "main", None);
@@ -2271,7 +2594,16 @@ unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
             assert_eq!(chart, "deploy/web");
             assert!(cause.contains("no chart renderer"), "{cause}");
         }
-        assert_eq!(paths_of(&produced), ["src/ok.rs"]);
+        assert_eq!(
+            paths_of(&produced),
+            [
+                "deploy/web/Chart.yaml",
+                "deploy/web/templates/deployment.yaml",
+                "deploy/web/templates/service.yaml",
+                "deploy/web/values.yaml",
+                "src/ok.rs",
+            ]
+        );
         assert!(!produced.coverage.is_complete());
         assert_eq!(
             produced.snapshot.coverage,
@@ -2317,9 +2649,8 @@ unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
         assert!(
             paths_of(&produced)
                 .iter()
-                .all(|path| !path.contains("/templates/")),
-            "{:?}",
-            paths_of(&produced)
+                .any(|path| *path == "deploy/web/templates/deployment.yaml"),
+            "static template-reference facts retain their source path"
         );
         assert!(
             produced
@@ -2411,8 +2742,8 @@ unsafe extern \"C\" { pub fn abs(input: i32) -> i32; }\n";
     fn the_extraction_contract_change_is_versioned() {
         // Template files stopped being extracted and the Rust grammar was
         // updated: nothing stored under an earlier contract may be served.
-        assert_eq!(FACTS_PRODUCER_VERSION, "cognicode.revision-facts/v4");
+        assert_eq!(FACTS_PRODUCER_VERSION, "cognicode.revision-facts/v5");
         assert_eq!(producer_versions().facts, FACTS_PRODUCER_VERSION);
-        assert!(producer_versions().extractor.contains("revision-facts/v4"));
+        assert!(producer_versions().extractor.contains("revision-facts/v5"));
     }
 }

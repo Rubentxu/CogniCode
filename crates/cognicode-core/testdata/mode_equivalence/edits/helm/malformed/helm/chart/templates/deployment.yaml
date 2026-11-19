@@ -1,12 +1,11 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }-demo
+  name: {{ .Release.Name }}-demo
 spec:
-  replicas: {{ .Values.replicaCount
+  replicas: {{ required "requiredValue must be set" .Values.requiredValue }}
   template:
     spec:
       containers:
         - name: app
-         image: "{{ .Values.image.repository
-          ports: [
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
