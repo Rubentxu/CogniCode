@@ -1226,11 +1226,15 @@ impl PerFileGraphCache {
                     SupertypeSource::Named(owner) => {
                         match declaration_named(&symbols, owner, language.folds_case()) {
                             Some(id) => id,
-                            // The owner is a name the file does not carry,
-                            // or one two declarations share: the relation
-                            // has no declaration to hang on, and a relation
-                            // with no declaration is not an edge.
-                            None => continue,
+                            None => match global_index {
+                                Some(index) => {
+                                    match index.resolve(owner, Some(caller_path)).outcome() {
+                                        Ok(id) => id,
+                                        Err(_) => continue,
+                                    }
+                                }
+                                None => continue,
+                            },
                         }
                     }
                 };

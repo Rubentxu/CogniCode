@@ -116,6 +116,13 @@ impl Renderer for Html {
 }
 ";
 
+/// An impl in a separate file from its owner type.
+const RUST_IMPL_IN_OTHER_FILE_RS: &str = "\
+impl Renderer for Html {
+    fn render(&self) -> String { String::new() }
+}
+";
+
 /// A Rust type that implements no trait.
 const RUST_PLAIN_RS: &str = "\
 pub struct Plain;
@@ -157,6 +164,50 @@ fn the_project_route_says_which_type_implements_which_trait() {
         vec!["Html -> Renderer".to_string()],
         "`impl Renderer for Html` names the trait as the parent of the type"
     );
+}
+
+/// A Rust impl resolves its owner by the unique project-wide declaration
+/// with that name; the declaration remains the only source of the edge.
+#[test]
+fn the_project_route_resolves_an_impl_owner_declared_in_another_file() {
+    let (dir, files) = project(&[
+        ("traits.rs", RUST_TRAIT_RS),
+        ("types.rs", "pub struct Html;"),
+        ("impls.rs", RUST_IMPL_IN_OTHER_FILE_RS),
+    ]);
+
+    assert_eq!(
+        inherits_edges(&file_route(dir.path(), &[&files[0], &files[1], &files[2]])),
+        vec!["Html -> Renderer".to_string()],
+        "the impl owner `Html` resolves to its unique project declaration, then `Renderer` resolves as its parent"
+    );
+}
+
+/// A missing or ambiguous impl owner is not treated as a declaration.
+#[test]
+fn the_project_route_does_not_invent_an_impl_owner_for_unresolved_or_ambiguous_names() {
+    for files in [
+        vec![
+            ("traits.rs", RUST_TRAIT_RS),
+            (
+                "impls.rs",
+                "impl Renderer for Ghost { fn render(&self) -> String { String::new() } }",
+            ),
+        ],
+        vec![
+            ("traits.rs", RUST_TRAIT_RS),
+            ("types_a.rs", "pub struct Html;"),
+            ("types_b.rs", "pub struct Html;"),
+            ("impls.rs", RUST_IMPL_IN_OTHER_FILE_RS),
+        ],
+    ] {
+        let (dir, files) = project(&files);
+        let paths: Vec<&Path> = files.iter().map(PathBuf::as_path).collect();
+        assert!(
+            inherits_edges(&file_route(dir.path(), &paths)).is_empty(),
+            "an unresolved or ambiguous owner cannot anchor an inheritance relation"
+        );
+    }
 }
 
 /// Python: the class a class extends is the parent of the class.
