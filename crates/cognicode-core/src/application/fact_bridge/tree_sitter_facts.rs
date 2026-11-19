@@ -8,7 +8,8 @@
 //! - `dependency.contains` edges → `(F, core:contains, Text(fqn))`;
 //! - `dependency.calls` edges → `(S, core:calls, Text(callee))`;
 //! - `dependency.imports` edges → `(F, core:imports, Text(module))`;
-//! - `dependency.references` edges → `(S, core:references, Text(name))`.
+//! - `dependency.references` edges → `(S, core:references, Text(name))`;
+//! - `dependency.inherits` edges → `(S, core:inherits, Text(name))`.
 //!
 //! Producer: `DeterministicAnalyzer` (design D1 authority table).
 
@@ -64,6 +65,11 @@ pub fn collect(builder: &mut FactBatchBuilder, result: &ExtractionResult) {
             "dependency.calls" => "core:calls",
             "dependency.imports" => "core:imports",
             "dependency.references" => "core:references",
+            // A parent the file declares is a relation the graph carries as
+            // an inheritance, and the projection reads it under this
+            // predicate. Without it the edge is dropped here, and the
+            // relation is lost without anybody being told.
+            "dependency.inherits" => "core:inherits",
             _ => continue,
         };
         let object = match &edge.target_ref {
@@ -207,6 +213,43 @@ mod tests {
             facts
                 .iter()
                 .all(|f| f.provenance.producer == ProducerKind::DeterministicAnalyzer)
+        );
+    }
+
+    /// An inheritance the reader publishes reaches the fact store.
+    ///
+    /// The projection reads a parent under `core:inherits`, and the bridge
+    /// is what carries it there. A kind the bridge does not map is dropped
+    /// without anybody being told, and the relation is lost: a class that
+    /// extends another used to arrive as a reference, and the day the
+    /// reader started publishing it as an inheritance the fact store would
+    /// have stopped carrying it.
+    #[test]
+    fn an_inheritance_reaches_the_fact_store() {
+        let file_node = node("src/lib.rs", NodeKind::Symbol(SymbolKind::File));
+        let widget = node("src/lib.rs:Widget:3", NodeKind::Symbol(SymbolKind::Class));
+        let edges = vec![edge(
+            "src/lib.rs:Widget:3",
+            TargetRef::Unresolved("Renderer".to_string()),
+            "dependency.inherits",
+        )];
+        let extraction = ExtractionResult::ok(
+            PathBuf::from("src/lib.rs"),
+            "hash".to_string(),
+            vec![file_node, widget],
+            edges,
+        );
+
+        let mut builder = FactBatchBuilder::new(SNAPSHOT);
+        builder.add_extraction(&extraction);
+        let facts = builder.finish();
+
+        assert!(
+            facts.iter().any(|f| {
+                f.predicate.as_str() == "core:inherits"
+                    && matches!(&f.object, FactValue::Text(t) if t == "Renderer")
+            }),
+            "the inheritance reaches the fact store: {facts:?}"
         );
     }
 

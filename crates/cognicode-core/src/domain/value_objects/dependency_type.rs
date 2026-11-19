@@ -15,6 +15,14 @@ use std::str::FromStr;
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, Default,
 )]
 pub enum DependencyType {
+    /// One declaration uses another: it calls it, or it builds a value of
+    /// it.
+    ///
+    /// A construction rides this relation because a construction IS a call —
+    /// the call of the type's constructor. Rust writes the constructor of a
+    /// unit struct and of a struct literal as the name of the type, and a
+    /// reader that reads only calls would not see it; the reader that reads
+    /// it publishes it here, where the call it would have published goes.
     #[default]
     Calls,
     Imports,

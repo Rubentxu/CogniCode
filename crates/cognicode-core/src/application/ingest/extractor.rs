@@ -254,6 +254,14 @@ pub fn extract_file_checked(
     nodes.push(file_node);
 
     // ── Iterative DFS over the AST ─────────────────────────────────────
+    // The names the file binds to a type. The constructions of a body name
+    // them, and a language that does not construct a type by naming it has
+    // no constructions to read.
+    let types = if config.language.constructs_types_by_name() {
+        naming::type_names_bound_to_types(root, source_bytes, symbols.import_types)
+    } else {
+        Default::default()
+    };
     let mut stack: Vec<Node> = vec![root];
     let mut seen = std::collections::HashSet::new();
 
@@ -286,7 +294,7 @@ pub fn extract_file_checked(
                 &symbol_id,
                 &symbols,
                 config.language.macro_call_shape(),
-                &source_path_str,
+                &types,
                 &mut edges,
             );
 
@@ -586,9 +594,30 @@ fn extract_calls_from_node(
     caller_id: &str,
     symbols: &crate::domain::value_objects::language::LanguageSymbols,
     shape: Option<MacroCallShape>,
-    _source_path: &str,
+    types: &std::collections::HashSet<String>,
     edges: &mut Vec<ExtractionEdge>,
 ) {
+    // The constructions of a type the body writes. Constructing a value of a
+    // type is calling the type's constructor, and the value of a unit struct
+    // is written without arguments: a reader that reads only calls does not
+    // see it.
+    for construction in
+        crate::infrastructure::parser::constructions::constructions_in(func_node, source, types)
+    {
+        let callee = naming::clean_callee_name(&construction.name);
+        if callee.is_empty() {
+            continue;
+        }
+        edges.push(ExtractionEdge {
+            source: caller_id.to_string(),
+            target_ref: TargetRef::Unresolved(callee),
+            kind: format!("dependency.{}", DependencyType::Calls),
+            provenance: Provenance::Inferred,
+            confidence: CONSTRUCTION_CONFIDENCE,
+            line: Some(construction.line),
+        });
+    }
+
     let mut stack = vec![*func_node];
     let func_start = func_node.start_byte();
     let func_end = func_node.end_byte();
@@ -666,6 +695,15 @@ fn extract_calls_from_node(
 /// The class says here how the edge was obtained, not what the fact store
 /// believes about it.
 const MACRO_CALL_CONFIDENCE: f64 = 0.6;
+
+/// The confidence a construction of a type is published with.
+///
+/// The reader recognises the construction by the shape of the value it
+/// reads: a `let` whose value is the name of a type the file binds. The
+/// name is bound to a type, but the file does not say the name IS a type, so
+/// the edge is weaker than a call read out of code —and `Provenance::Inferred`
+/// is the class that says so.
+const CONSTRUCTION_CONFIDENCE: f64 = 0.8;
 
 /// Map a tree-sitter class-like node to a `SymbolKind`.
 ///

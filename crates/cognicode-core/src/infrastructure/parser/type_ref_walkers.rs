@@ -63,9 +63,24 @@ pub fn walk_rust_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
         }
 
         "impl_item" => {
-            // impl Trait for Type → extract the trait name
-            if let Some(type_node) = node.child_by_field_name("type") {
-                collect_type_names(&type_node, source, TypeRefContext::TraitBound, &mut refs);
+            // `impl Trait for Type`: the trait is the parent the type
+            // declares, and the type — not the block, which declares
+            // nothing — owns the relation.
+            if let Some(trait_node) = node.child_by_field_name("trait")
+                && let Some(type_node) = node.child_by_field_name("type")
+            {
+                let owner = simple_type_name(&type_node, source);
+                let mut parents = Vec::new();
+                collect_type_names(&trait_node, source, TypeRefContext::Supertype, &mut parents);
+                for mut parent in parents {
+                    // The arguments of the trait are not parents: they
+                    // are what the trait is written with.
+                    if parent.context != TypeRefContext::Supertype {
+                        continue;
+                    }
+                    parent.implemented_type = Some(owner.clone());
+                    refs.push(parent);
+                }
             }
         }
 
@@ -106,13 +121,17 @@ pub fn walk_python_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Typ
             if let Some(supers) = node.child_by_field_name("superclasses") {
                 for i in 0..supers.child_count() {
                     let child = supers.child(i).unwrap();
-                    if child.is_named() {
-                        let name = node_text(&child, source);
+                    // A keyword argument of the class header is not a
+                    // parent: `class Foo(Base, metaclass=Meta)` names
+                    // one parent.
+                    if child.is_named() && child.kind() != "keyword_argument" {
+                        let name = simple_name(&node_text(&child, source));
                         if !name.is_empty() {
                             refs.push(TypeRef {
                                 target_name: name,
-                                context: TypeRefContext::TraitBound,
+                                context: TypeRefContext::Supertype,
                                 line: child.start_position().row as u32 + 1,
+                                implemented_type: None,
                             });
                         }
                     }
@@ -150,23 +169,34 @@ pub fn walk_typescript_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec
                 collect_type_names(&ret, source, TypeRefContext::ReturnType, &mut refs);
             }
         }
-        "class_declaration" => {
-            // Extends/implements
+        "class_declaration" | "abstract_class_declaration" => {
+            // `class Dog extends Animal implements Pet`: the parents
+            // live in the heritage clause the class carries.
             for i in 0..node.child_count() {
-                let child = node.child(i).unwrap();
-                let kind = child.kind();
-                if kind == "extends_clause" || kind == "implements_clause" {
-                    for j in 0..child.child_count() {
-                        let grandchild = child.child(j).unwrap();
-                        if grandchild.is_named() {
-                            let name = node_text(&grandchild, source);
-                            if !name.is_empty() {
-                                refs.push(TypeRef {
-                                    target_name: name,
-                                    context: TypeRefContext::TraitBound,
-                                    line: grandchild.start_position().row as u32 + 1,
-                                });
-                            }
+                let heritage = node.child(i).unwrap();
+                if heritage.kind() != "class_heritage" {
+                    continue;
+                }
+                for j in 0..heritage.child_count() {
+                    let clause = heritage.child(j).unwrap();
+                    if clause.kind() != "extends_clause" && clause.kind() != "implements_clause" {
+                        continue;
+                    }
+                    for k in 0..clause.child_count() {
+                        let parent = clause.child(k).unwrap();
+                        // The arguments a parent is written with are not
+                        // a parent: `extends Box<T>` names one parent.
+                        if !parent.is_named() || parent.kind() == "type_arguments" {
+                            continue;
+                        }
+                        let name = simple_name(&node_text(&parent, source));
+                        if !name.is_empty() {
+                            refs.push(TypeRef {
+                                target_name: name,
+                                context: TypeRefContext::Supertype,
+                                line: parent.start_position().row as u32 + 1,
+                                implemented_type: None,
+                            });
                         }
                     }
                 }
@@ -310,6 +340,7 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                                 target_name: name,
                                 context: TypeRefContext::ReturnType,
                                 line: child.start_position().row as u32 + 1,
+                                implemented_type: None,
                             });
                         }
                     }
@@ -320,7 +351,7 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
         "class_declaration" | "interface_declaration" | "record_declaration" => {
             // Extends: `superclass` field
             if let Some(supers) = node.child_by_field_name("superclass") {
-                collect_type_names(&supers, source, TypeRefContext::TraitBound, &mut refs);
+                collect_type_names(&supers, source, TypeRefContext::Supertype, &mut refs);
             }
 
             // Implements: `interfaces` field
@@ -328,7 +359,7 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                 for i in 0..interfaces.child_count() {
                     let child = interfaces.child(i).unwrap();
                     if child.is_named() {
-                        collect_type_names(&child, source, TypeRefContext::TraitBound, &mut refs);
+                        collect_type_names(&child, source, TypeRefContext::Supertype, &mut refs);
                     }
                 }
             }
@@ -345,7 +376,7 @@ pub fn walk_java_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<TypeR
                 for i in 0..interfaces.child_count() {
                     let child = interfaces.child(i).unwrap();
                     if child.is_named() {
-                        collect_type_names(&child, source, TypeRefContext::TraitBound, &mut refs);
+                        collect_type_names(&child, source, TypeRefContext::Supertype, &mut refs);
                     }
                 }
             }
@@ -626,8 +657,33 @@ fn push_supertype(node: &tree_sitter::Node, source: &[u8], out: &mut Vec<TypeRef
             target_name: name.to_string(),
             context: TypeRefContext::Supertype,
             line: node.start_position().row as u32 + 1,
+            implemented_type: None,
         });
     }
+}
+
+/// The name a type is written with, without its path or its arguments.
+///
+/// `a::Html`, `com.example.Html`, `Html<T>` and `&Html` all name `Html`:
+/// a relation hangs on the declaration, and the declaration is named by
+/// the last segment of the path.
+fn simple_name(text: &str) -> String {
+    let head = text
+        .split(|c: char| c == '<' || c == '(' || c.is_whitespace())
+        .next()
+        .unwrap_or("")
+        .trim_start_matches(['&', '*'])
+        .trim();
+    head.rsplit(['.', ':'])
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+/// The name a type is written with, without its path or its arguments.
+fn simple_type_name(node: &tree_sitter::Node, source: &[u8]) -> String {
+    simple_name(&node_text(node, source))
 }
 
 // ============================================================================
@@ -830,6 +886,7 @@ pub fn walk_swift_type_refs(node: &tree_sitter::Node, source: &[u8]) -> Vec<Type
                                     target_name: name,
                                     context: TypeRefContext::TraitBound,
                                     line: child.start_position().row as u32 + 1,
+                                    implemented_type: None,
                                 });
                             }
                         }
@@ -877,6 +934,7 @@ fn collect_type_names(
                     target_name: name,
                     context,
                     line: node.start_position().row as u32 + 1,
+                    implemented_type: None,
                 });
             }
         }
@@ -893,12 +951,13 @@ fn collect_type_names(
         "scoped_type_identifier" => {
             // std::vec::Vec → take last segment
             let name = node_text(node, source);
-            let last = name.rsplit("::").next().unwrap_or(&name);
-            if !is_primitive(last) && !last.is_empty() {
+            let last = simple_name(&name);
+            if !is_primitive(&last) && !last.is_empty() {
                 out.push(TypeRef {
-                    target_name: last.to_string(),
+                    target_name: last,
                     context,
                     line: node.start_position().row as u32 + 1,
+                    implemented_type: None,
                 });
             }
         }
@@ -974,6 +1033,7 @@ fn collect_where_types(node: &tree_sitter::Node, source: &[u8], out: &mut Vec<Ty
                                     target_name: name,
                                     context: TypeRefContext::TraitBound,
                                     line: gg.start_position().row as u32 + 1,
+                                    implemented_type: None,
                                 });
                             }
                         }
@@ -1245,6 +1305,131 @@ mod tests {
                     !refs.is_empty(),
                     "should find extends/implements type refs: {:?}",
                     refs.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+                );
+            },
+            tree_sitter_java::LANGUAGE.into(),
+        );
+    }
+
+    /// The trait an `impl` names is the parent the type declares, and the
+    /// type is the one that owns the relation: the block declares nothing.
+    #[test]
+    fn test_walk_rust_type_refs_impl_trait_is_a_parent_of_the_type() {
+        let source =
+            "impl Renderer for Html {\n    fn render(&self) -> String { String::new() }\n}";
+        test_walker(
+            source,
+            walk_rust_type_refs,
+            "impl_item",
+            |refs| {
+                assert_eq!(refs.len(), 1, "{refs:?}");
+                assert_eq!(refs[0].target_name, "Renderer");
+                assert_eq!(refs[0].context, TypeRefContext::Supertype);
+                assert_eq!(refs[0].implemented_type.as_deref(), Some("Html"));
+            },
+            tree_sitter_rust::LANGUAGE.into(),
+        );
+    }
+
+    /// A trait implemented for a type the file names with its path names
+    /// the type by its last segment: the declaration is `Html`.
+    #[test]
+    fn test_walk_rust_type_refs_impl_trait_names_the_type_by_its_last_segment() {
+        let source =
+            "impl Renderer for render::Html {\n    fn render(&self) -> String { String::new() }\n}";
+        test_walker(
+            source,
+            walk_rust_type_refs,
+            "impl_item",
+            |refs| {
+                assert_eq!(refs.len(), 1, "{refs:?}");
+                assert_eq!(refs[0].implemented_type.as_deref(), Some("Html"));
+            },
+            tree_sitter_rust::LANGUAGE.into(),
+        );
+    }
+
+    /// An `impl` without a trait is an inherent block: it names no parent.
+    #[test]
+    fn test_walk_rust_type_refs_inherent_impl_names_no_parent() {
+        let source = "impl Html {\n    fn render(&self) -> String { String::new() }\n}";
+        test_walker(
+            source,
+            walk_rust_type_refs,
+            "impl_item",
+            |refs| {
+                assert!(refs.is_empty(), "{refs:?}");
+            },
+            tree_sitter_rust::LANGUAGE.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_python_type_refs_class_parent_is_a_supertype() {
+        let source = "class Dog(Animal):\n    pass\n";
+        test_walker(
+            source,
+            walk_python_type_refs,
+            "class_definition",
+            |refs| {
+                assert_eq!(refs.len(), 1, "{refs:?}");
+                assert_eq!(refs[0].target_name, "Animal");
+                assert_eq!(refs[0].context, TypeRefContext::Supertype);
+                assert!(refs[0].implemented_type.is_none());
+            },
+            tree_sitter_python::LANGUAGE.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_typescript_type_refs_class_parent_is_a_supertype() {
+        let source = "class Dog extends Animal implements Pet {}\n";
+        test_walker(
+            source,
+            walk_typescript_type_refs,
+            "class_declaration",
+            |refs| {
+                let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
+                assert_eq!(names, ["Animal", "Pet"], "{refs:?}");
+                assert!(
+                    refs.iter().all(|r| r.context == TypeRefContext::Supertype),
+                    "{refs:?}"
+                );
+            },
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        );
+    }
+
+    /// The arguments a parent is written with are not a parent:
+    /// `extends Box<T>` names one parent, not two.
+    #[test]
+    fn test_walk_typescript_type_refs_generic_parent_names_one_parent() {
+        let source = "class Dog extends Box<Animal> {}";
+        test_walker(
+            source,
+            walk_typescript_type_refs,
+            "class_declaration",
+            |refs| {
+                let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
+                assert_eq!(names, ["Box"], "{refs:?}");
+            },
+            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        );
+    }
+
+    #[test]
+    fn test_walk_java_type_refs_class_parent_is_a_supertype() {
+        let source = "class Foo extends Bar implements Baz, Quux {}";
+        test_walker(
+            source,
+            walk_java_type_refs,
+            "class_declaration",
+            |refs| {
+                let names: Vec<_> = refs.iter().map(|r| r.target_name.as_str()).collect();
+                assert_eq!(names, ["Bar", "Baz", "Quux"], "{refs:?}");
+                assert!(
+                    refs.iter().all(|r| r.context == TypeRefContext::Supertype),
+                    "{refs:?}"
                 );
             },
             tree_sitter_java::LANGUAGE.into(),

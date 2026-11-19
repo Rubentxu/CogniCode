@@ -12,6 +12,7 @@ use std::sync::Arc;
 use tree_sitter::Parser as TsParser;
 
 use crate::domain::value_objects::Language;
+use crate::infrastructure::parser::constructions;
 use crate::infrastructure::parser::macro_calls;
 use crate::infrastructure::parser::naming;
 
@@ -884,21 +885,27 @@ impl TreeSitterParser {
             .collect())
     }
 
-    /// The parents each declaration of a tree names: `(declaring symbol,
-    /// parent name as written, line)`.
+    /// The parents each declaration of a tree names.
     ///
     /// What counts as a parent is the walker's rule, not this method's: the
     /// walker of the language is the one owner of that grammar knowledge,
     /// and this traversal only places each answer on the declaration that
     /// wrote it.
+    ///
+    /// The declaration that owns the relation is the one the walker named:
+    /// the node it read, when that node declares something, and the type
+    /// the walker named, when it did not — Rust's `impl Trait for Type`
+    /// names the trait in a block that declares nothing, so the relation
+    /// belongs to the type.
     pub fn find_supertype_sites_in_tree(
         &self,
         tree: &tree_sitter::Tree,
         source: &str,
         file_path: &str,
         walker: crate::infrastructure::parser::language_config::TypeRefWalkerFn,
-    ) -> Vec<(SymbolId, String, u32)> {
+    ) -> Vec<crate::infrastructure::parser::supertype::SupertypeSite> {
         use crate::application::ingest::types::TypeRefContext;
+        use crate::infrastructure::parser::supertype::{SupertypeSite, SupertypeSource};
         let mut sites = Vec::new();
         let mut stack = vec![tree.root_node()];
         while let Some(node) = stack.pop() {
@@ -906,16 +913,28 @@ impl TreeSitterParser {
                 .into_iter()
                 .filter(|r| r.context == TypeRefContext::Supertype)
                 .collect();
-            let declaring = if parents.is_empty() {
-                None
-            } else {
-                self.node_to_symbol_with_path(node, source, file_path)
-            };
-            if let Some(declaring) = declaring {
-                let id = SymbolId::new(declaring.fully_qualified_name());
-                for parent in parents {
-                    sites.push((id.clone(), parent.target_name, parent.line));
-                }
+            for parent in parents {
+                // The walker named the type that implements the trait: the
+                // relation hangs on that type, not on the node that named
+                // the trait.
+                let source = match parent.implemented_type {
+                    Some(owner) => SupertypeSource::Named(owner),
+                    None => {
+                        let Some(declaring) =
+                            self.node_to_symbol_with_path(node, source, file_path)
+                        else {
+                            continue;
+                        };
+                        SupertypeSource::Declaration(SymbolId::new(
+                            declaring.fully_qualified_name(),
+                        ))
+                    }
+                };
+                sites.push(SupertypeSite {
+                    source,
+                    parent: parent.target_name,
+                    line: parent.line,
+                });
             }
             for i in (0..node.child_count()).rev() {
                 if let Some(child) = node.child(i) {
@@ -942,7 +961,26 @@ impl TreeSitterParser {
 
         // Find all function definitions
         let language = self.language;
-        self.find_function_calls(tree.root_node(), source, file_path, language, &mut calls);
+        // The names the file binds to a type. The constructions of a body
+        // name them, and a language that does not construct a type by
+        // naming it has no constructions to read.
+        let types = if language.constructs_types_by_name() {
+            naming::type_names_bound_to_types(
+                tree.root_node(),
+                source.as_bytes(),
+                language.symbols().import_types,
+            )
+        } else {
+            Default::default()
+        };
+        self.find_function_calls(
+            tree.root_node(),
+            source,
+            file_path,
+            language,
+            &types,
+            &mut calls,
+        );
 
         let top_level = self.top_level_calls(tree, source, file_path);
         if !top_level.is_empty() {
@@ -966,6 +1004,7 @@ impl TreeSitterParser {
         source: &str,
         file_path: &str,
         language: Language,
+        types: &std::collections::HashSet<String>,
         relationships: &mut Vec<FoundCall>,
     ) {
         let mut stack = Vec::new();
@@ -976,7 +1015,7 @@ impl TreeSitterParser {
                 if let Some(caller_symbol) =
                     self.node_to_symbol_with_path(current, source, file_path)
                 {
-                    self.find_calls_in_node(current, source, &caller_symbol, relationships);
+                    self.find_calls_in_node(current, source, &caller_symbol, types, relationships);
                 }
                 continue; // Don't push children - already processed via find_calls_in_node
             }
@@ -996,11 +1035,28 @@ impl TreeSitterParser {
         node: tree_sitter::Node,
         source: &str,
         caller_symbol: &Symbol,
+        types: &std::collections::HashSet<String>,
         relationships: &mut Vec<FoundCall>,
     ) {
         let call_types = self.language.symbols().call_types;
         let call_type = self.language.call_node_type();
         let by_sets = self.language.reads_declared_symbol_sets();
+
+        // The constructions of a type the body writes. Constructing a value
+        // of a type is calling the type's constructor, and the value of a
+        // unit struct is written without arguments: a reader that reads only
+        // calls does not see it.
+        for construction in constructions::constructions_in(&node, source.as_bytes(), types) {
+            let Some(callee) = self.callee_from_text(&construction.name) else {
+                continue;
+            };
+            relationships.push(FoundCall {
+                caller: caller_symbol.clone(),
+                callee,
+                line: construction.line,
+            });
+        }
+
         let mut stack = Vec::new();
         stack.push(node);
 

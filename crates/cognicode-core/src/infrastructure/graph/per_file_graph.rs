@@ -19,6 +19,7 @@ use crate::infrastructure::graph::package;
 use crate::infrastructure::graph::semantic_layer::{
     call_graph_from, semantic_facts, semantic_facts_of,
 };
+use crate::infrastructure::parser::supertype::{SupertypeSource, declaration_named};
 use crate::infrastructure::parser::{Language, TreeSitterParser};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -1100,7 +1101,7 @@ impl PerFileGraphCache {
         > = HashMap::new();
 
         // Add symbols to graph
-        for symbol in symbols {
+        for symbol in &symbols {
             let symbol_id = graph.add_symbol(symbol.clone());
             if symbol.kind() == &crate::domain::value_objects::SymbolKind::Declaration {
                 continue;
@@ -1215,9 +1216,26 @@ impl PerFileGraphCache {
         // what a parent is; the resolution is the one the calls use, so a
         // name two declarations share is a hole and not an edge.
         if let Some(walker) = config.type_ref_walker {
-            for (source_id, parent_name, line) in
-                parser.find_supertype_sites_in_tree(&tree, &source, file_path, walker)
-            {
+            for site in parser.find_supertype_sites_in_tree(&tree, &source, file_path, walker) {
+                // The declaration that owns the relation: the node the
+                // walker read, or the type it named — Rust's `impl Trait
+                // for Type` names the trait in a block that declares
+                // nothing, so the relation belongs to the type.
+                let source_id = match &site.source {
+                    SupertypeSource::Declaration(id) => id.clone(),
+                    SupertypeSource::Named(owner) => {
+                        match declaration_named(&symbols, owner, language.folds_case()) {
+                            Some(id) => id,
+                            // The owner is a name the file does not carry,
+                            // or one two declarations share: the relation
+                            // has no declaration to hang on, and a relation
+                            // with no declaration is not an edge.
+                            None => continue,
+                        }
+                    }
+                };
+                let parent_name = site.parent;
+                let line = site.line;
                 let resolution = match global_index {
                     Some(index) => index.resolve(&parent_name, Some(caller_path)),
                     None => resolve_within_file(

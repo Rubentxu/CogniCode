@@ -1,9 +1,11 @@
 //! Parser module - Tree-sitter based parsing
 
 mod ast_scanner;
+pub mod constructions;
 pub mod language_config;
 pub mod macro_calls;
 pub mod naming;
+pub mod supertype;
 pub mod syntax_analysis;
 pub mod test_markers;
 pub mod tree;
