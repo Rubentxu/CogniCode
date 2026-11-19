@@ -16,6 +16,8 @@ pub(crate) mod content_search;
 pub mod detector_reuse_store;
 pub(crate) mod indexed_search;
 pub mod text_index;
+// Cuando un corpus merece el indice, y cuando no: decision pura.
+pub mod text_index_policy;
 // Lo que el servicio recuerda de cada fichero leido (TASK-228).
 pub(crate) mod file_facts_cache;
 pub mod file_operations;

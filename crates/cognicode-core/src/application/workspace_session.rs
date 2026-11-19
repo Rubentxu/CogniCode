@@ -24,6 +24,7 @@ use crate::application::ports::{
 use crate::application::services::analysis_service::AnalysisService;
 use crate::application::services::file_operations::FileOperationsService;
 use crate::application::services::refactor_service::RefactorService;
+use crate::application::services::text_index::TextIndexConfig;
 use crate::domain::aggregates::CallGraph;
 use crate::domain::events::GraphEvent;
 use crate::domain::traits::code_intelligence::{
@@ -140,6 +141,15 @@ pub struct WorkspaceCapabilities {
     pub symbol_search: Arc<dyn SymbolSearch>,
     /// Reads the source a symbol occupies.
     pub symbol_source: Arc<dyn SymbolSource>,
+    /// The text index this session's file service is built with, if the
+    /// corpus earned one.
+    ///
+    /// `None` keeps the service unindexed — the honest absence the report
+    /// says so. Deciding whether it is `Some` belongs to the composition
+    /// root that measured the corpus
+    /// (`crate::application::services::text_index_policy`), not to the
+    /// session, which has no opinion about what a deployment can afford.
+    pub text_index: Option<TextIndexConfig>,
 }
 
 /// Transport-neutral facade for CogniCode operations.
@@ -209,12 +219,19 @@ impl WorkspaceSession {
         // look like" and a rebuild nobody could see.
         let analysis = Arc::new(AnalysisService::with_graph_cache(capabilities.graph));
         let refactor = Arc::new(RefactorService::new());
-        let file_ops = Arc::new(FileOperationsService::new(
+        // The index, if the composition root decided the corpus earns one,
+        // goes on through the service's own opt-in: absent here means absent
+        // in every `text_index` report, exactly as before the knob existed.
+        let file_ops = FileOperationsService::new(
             root.display().to_string(),
             capabilities.path_policy,
             capabilities.code_verifier,
             capabilities.syntax,
-        ));
+        );
+        let file_ops = Arc::new(match capabilities.text_index {
+            Some(config) => file_ops.with_text_index(config),
+            None => file_ops,
+        });
         // Both arrive built and shared with nothing else to construct. The
         // index stays lazy because populating it walks the workspace.
         let semantic_index_ready = Arc::new(RwLock::new(false));
@@ -272,6 +289,17 @@ impl WorkspaceSession {
     /// Returns the workspace root path
     pub fn workspace_root(&self) -> &Path {
         &self.workspace_root
+    }
+
+    /// The text index policy this session's file service carries, if any.
+    ///
+    /// Test-facing: the composition tests below assert that a session built
+    /// through the shared route got the policy, and the honest absence, it
+    /// was wired with — the same claim the `text_index` report makes on
+    /// every search, checkable without searching.
+    #[cfg(test)]
+    pub(crate) fn text_index_config(&self) -> Option<&TextIndexConfig> {
+        self.file_ops.text_index_config()
     }
 
     /// The graph the analysis service holds, or `None` while nothing has
@@ -4579,6 +4607,66 @@ pub const MY_CONST: i32 = 42;
         assert!(
             stats2.file_count >= 1,
             "Session2 should have at least 1 file"
+        );
+    }
+
+    // =========================================================================
+    // The text index reaches the session through the shared composition route
+    // =========================================================================
+
+    /// A corpus over the threshold, within budget, gets its index into the
+    /// session's file service by the route every surface takes.
+    ///
+    /// `WorkspaceSession::new` (the test constructor) composes through
+    /// `interface::composition::default_capabilities` — the same function the
+    /// CLI calls, and the same policy the MCP adapter calls. So what these
+    /// two tests assert is the wiring both transports share: no process is
+    /// started because the composition, not the transport, is where the
+    /// knob lives.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_session_over_the_threshold_carries_the_policy_index() {
+        let temp_dir = TempDir::new().unwrap();
+        for i in 0..17 {
+            std::fs::write(
+                temp_dir.path().join(format!("f{i:04}.txt")),
+                vec![b'x'; 128 * 1024],
+            )
+            .unwrap();
+        }
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        let config = session
+            .text_index_config()
+            .expect("a 2.1 MiB corpus earns the index through the shared route");
+        assert_eq!(
+            config,
+            &crate::application::services::text_index_policy::TextIndexPolicy::default().config,
+            "the session carries the default policy's configuration"
+        );
+    }
+
+    /// A workspace under the threshold keeps the honest absence: the session
+    /// is built exactly as before the knob existed, and every search says
+    /// `text_index: None`.
+    #[tokio::test(flavor = "current_thread")]
+    async fn a_small_workspace_session_has_no_index_to_report() {
+        let temp_dir = TempDir::new().unwrap();
+        std::fs::write(temp_dir.path().join("only.txt"), "fn tiny() {}").unwrap();
+
+        let session = WorkspaceSession::new(temp_dir.path()).await.unwrap();
+
+        assert!(
+            session.text_index_config().is_none(),
+            "a toy corpus must not earn an index"
+        );
+        let result = session
+            .search_content(crate::application::dto::SearchContentRequest::new("tiny"))
+            .await
+            .unwrap();
+        assert!(
+            result.text_index.is_none(),
+            "an unindexed session reports the absence, not a zeroed index"
         );
     }
 }
