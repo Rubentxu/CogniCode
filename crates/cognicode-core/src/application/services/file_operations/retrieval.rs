@@ -145,6 +145,8 @@ impl FileOperationsService {
             case_insensitive: Some(false),
             max_results: Some(input.max_results as usize),
             context_lines: Some(2),
+            cursor: None,
+            offset: None,
         };
 
         let search_result = self.search_content_until(search_input, bound)?;

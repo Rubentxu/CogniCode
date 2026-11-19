@@ -52,6 +52,7 @@ use std::sync::Arc;
 /// The retrieval of the candidates and their verification, with the budget
 /// that bounds them.
 mod retrieval;
+mod search_content;
 
 /// The digest of the content the destination holds, if it holds any.
 ///
@@ -1580,179 +1581,6 @@ impl FileOperationsService {
         self.search_content_until(input, None)
     }
 
-    /// The same search, with a bound the walk answers to.
-    ///
-    /// The walk stops when the bound passes, and the answer says that it
-    /// stopped: a walk that was cut is not a walk that read everything, and
-    /// the answer must not publish it as one. The hole it leaves says which
-    /// bound was reached.
-    pub(crate) fn search_content_until(
-        &self,
-        input: SearchContentRequest,
-        bound: Option<Bound>,
-    ) -> AppResult<SearchContentResult> {
-        let search_path = input
-            .path
-            .as_ref()
-            .map(|p| self.validate_path(p))
-            .unwrap_or_else(|| Ok(self.workspace_root.clone()))?;
-
-        let max_results = input.max_results.unwrap_or(50);
-        let context_lines = input.context_lines.unwrap_or(2) as usize;
-        let case_insensitive = input.case_insensitive.unwrap_or(false);
-        let is_regex = input.regex.unwrap_or(true);
-
-        // Validate regex pattern if regex mode is enabled
-        if is_regex && let Err(msg) = Self::validate_regex_pattern(&input.pattern) {
-            return Err(AppError::InvalidParameter(format!(
-                "Invalid regex pattern: {}",
-                msg
-            )));
-        }
-
-        // Build walker with gitignore awareness
-        //
-        // `require_git(false)`: the `.gitignore` of a project is the
-        // project's own declaration of what is out of bounds, and
-        // whether somebody has run `git init` is not the project's
-        // business. `ignore` applies the git rules only inside a
-        // repository by default, so a tree that nobody has committed
-        // yet was read whole. The law lives in
-        // `infrastructure::walk_policy`; the application cannot name
-        // that module (CR-06), so the setting whose default is the
-        // wrong way round is written here.
-        let mut walker = WalkBuilder::new(&search_path);
-        walker
-            .hidden(true)
-            .git_ignore(true)
-            .git_global(true)
-            .parents(true)
-            .require_git(false);
-
-        // Prepared once for the tree. A pattern that cannot match (an empty
-        // literal) still walks, so the files are counted, and reads none.
-        let pattern = ContentPattern::new(&input.pattern, is_regex, case_insensitive);
-        let mut indexed = IndexedWalk::over(self.text_index.as_ref(), &input.pattern, is_regex);
-
-        let mut matches = Vec::new();
-        let mut files_scanned = 0;
-        let mut unread = Vec::new();
-        // Whether the limit stopped the walk, and why it stopped it. The
-        // walk that stops early did not cover the tree, and an answer that
-        // says it did is the lie this product does not tell: the tree may
-        // hold more matches, and the caller cannot know.
-        let mut truncation: Option<String> = None;
-        // One owner for the wording of the cut: the two places that stop
-        // the walk publish the same sentence, so the answer names the same
-        // limit wherever the walk was stopped.
-        let truncation_reason = || {
-            format!(
-                "the search stopped at max_results={max_results}: the tree may hold more matches"
-            )
-        };
-
-        for result in walker.build() {
-            if matches.len() >= max_results {
-                truncation = Some(truncation_reason());
-                break;
-            }
-
-            // The walk answers to a bound: when it passes, the walk stops
-            // and the answer says that it stopped. A walk that reads the
-            // whole tree of a big repository is the one part of this work
-            // that nothing else bounds.
-            if let Some(bound) = &bound
-                && bound.reached()
-            {
-                unread.push(budget_cut(bound.detail()));
-                break;
-            }
-
-            let entry = match result {
-                Ok(e) => e,
-                Err(error) => {
-                    unread.push(walk_failure(&error));
-                    continue;
-                }
-            };
-
-            if let Some(hole) = declined_symlink(&entry) {
-                unread.push(hole);
-                continue;
-            }
-
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-
-            // Apply glob filter if provided
-            if let Some(glob) = &input.file_glob
-                && !path_matches_glob(path, glob)
-            {
-                continue;
-            }
-
-            files_scanned += 1;
-
-            // Skip binary files
-            if Self::is_binary_file(path) {
-                continue;
-            }
-
-            let Some(pattern) = &pattern else {
-                continue;
-            };
-
-            let content = match indexed.read_text(path, entry.metadata().ok().as_ref()) {
-                FileRead::Text(content) => content,
-                FileRead::Skipped | FileRead::NotText => continue,
-                FileRead::Failed(error) => {
-                    unread.push(read_failure(path, &error));
-                    continue;
-                }
-            };
-
-            // Search for pattern
-            let search_matches = pattern.find_in(&content, context_lines);
-
-            for (line_num, col, text, context) in search_matches {
-                if matches.len() >= max_results {
-                    truncation = Some(truncation_reason());
-                    break;
-                }
-                matches.push(ContentMatch {
-                    file: path.to_string_lossy().to_string(),
-                    line: line_num,
-                    col,
-                    text,
-                    context,
-                });
-            }
-        }
-
-        let total = matches.len();
-
-        // The limit stopped the walk: the answer is about a part of the
-        // tree, and it says so. The hole is what turns the coverage from
-        // "complete" into "partial" — a search that stopped early did not
-        // cover the tree it was asked about.
-        if let Some(reason) = &truncation {
-            unread.push(budget_cut(reason));
-        }
-
-        let complete = truncation.is_none() && unread.is_empty() && input.file_glob.is_none();
-        let text_index = indexed.finish(Path::new(&search_path), complete);
-
-        Ok(SearchContentResult {
-            matches,
-            total,
-            files_scanned,
-            unread,
-            text_index,
-        })
-    }
-
     /// Validates a regex pattern before processing
     /// Returns Err with description if pattern is invalid
     fn validate_regex_pattern(pattern: &str) -> Result<(), String> {
@@ -2348,6 +2176,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(1),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -2377,6 +2207,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(1),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -2401,6 +2233,8 @@ mod tests {
             case_insensitive: Some(true),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -2442,6 +2276,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(0),
+                cursor: None,
+                offset: None,
             })
             .unwrap();
 
@@ -2486,6 +2322,8 @@ mod tests {
                 case_insensitive: Some(false),
                 max_results: Some(50),
                 context_lines: Some(0),
+                cursor: None,
+                offset: None,
             })
             .unwrap();
 
@@ -2739,6 +2577,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         });
 
         let output = result.expect("the search succeeds");
@@ -3059,6 +2899,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -3091,6 +2933,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -3120,6 +2964,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
@@ -3148,6 +2994,8 @@ mod tests {
             case_insensitive: Some(false),
             max_results: Some(50),
             context_lines: Some(0),
+            cursor: None,
+            offset: None,
         };
 
         let result = service.search_content(input);
